@@ -92,11 +92,7 @@ export class CapabilityRegistry {
 export const CapabilityRegistryContext = createContext<CapabilityRegistry | null>(null);
 
 export function useCapabilityRegistry() {
-  const registry = useContext(CapabilityRegistryContext);
-  if (!registry) {
-    throw new Error("useAssistantEditor must be used inside <AssistantProvider>.");
-  }
-  return registry;
+  return useContext(CapabilityRegistryContext);
 }
 
 /**
@@ -104,6 +100,9 @@ export function useCapabilityRegistry() {
  *
  * Pass `null` while there is nothing to act on — before a fare table is chosen, for instance. The
  * hook is always called, so hook order never changes, and passing null simply withdraws the offer.
+ *
+ * An editor rendered with no assistant around it — in a unit test, say — registers with nothing and
+ * behaves exactly as it did before, so offering itself never becomes a reason to fail.
  */
 export function useAssistantEditor(capability: EditorCapability | null): void {
   const registry = useCapabilityRegistry();
@@ -114,7 +113,7 @@ export function useAssistantEditor(capability: EditorCapability | null): void {
   const signature = capability?.signature ?? "";
 
   useEffect(() => {
-    if (!isOffered) return;
+    if (!registry || !isOffered) return;
     return registry.register(() => {
       const current = latest.current;
       if (!current) throw new Error("The assistant read an editor that is no longer registered.");
@@ -123,7 +122,7 @@ export function useAssistantEditor(capability: EditorCapability | null): void {
   }, [registry, isOffered]);
 
   useEffect(() => {
-    if (!isOffered) return;
+    if (!registry || !isOffered) return;
     registry.touch();
   }, [registry, isOffered, signature]);
 }
