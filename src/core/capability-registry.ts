@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef } from "react";
+import type { CommandOutcome } from "../contracts/assistant-contracts";
 import type { EditorContextSnapshot } from "../contracts/section-context";
 import type { ApplyDecision, ApplyResult, UiAction, UiActionKind } from "../contracts/ui-actions";
 
@@ -24,6 +25,15 @@ export interface EditorCapability {
   canApply(action: UiAction): ApplyDecision;
   /** Merges the action into the editor's draft state and marks it dirty. */
   apply(action: UiAction): ApplyResult;
+  /**
+   * Things this editor can do on the user's behalf once they have said yes — saving what is in the
+   * grid, for instance.
+   *
+   * These run the editor's own existing operation, so the change goes through the same endpoint,
+   * the same validation and the same permissions as pressing the button by hand. The assistant
+   * never builds the payload: it asks, the user agrees, and the editor does what it always does.
+   */
+  commands?: Record<string, () => Promise<CommandOutcome>>;
   /** Present only on screens that accept an image. Its absence hides the upload button. */
   attachments?: {
     kinds: string[];

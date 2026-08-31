@@ -560,6 +560,18 @@
   gap: 0.5rem;
 }
 
+.assistant-confirm-phrase {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--asst-fg-muted);
+}
+
+.assistant-confirm-phrase strong {
+  color: var(--asst-fg);
+}
+
 /* ------------------------------------------------------------------- buttons */
 
 .assistant-button {

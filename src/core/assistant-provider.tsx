@@ -448,24 +448,30 @@ export function AssistantProvider({
       const proposal = message.response.commandProposal;
       if (!proposal) return;
 
-      const command = adapter.commands?.[proposal.commandId];
-      if (!command) {
+      // The open editor is asked first: saving what is on screen is its own job, and it knows what
+      // is in the grid. Only a command no editor claims falls through to the app.
+      const editorCommand = registry.getActive()?.commands?.[proposal.commandId];
+      const appCommand = adapter.commands?.[proposal.commandId];
+      if (!editorCommand && !appCommand) {
         dispatch({
           type: "command",
           id: messageId,
-          state: { status: "failed", message: "This app can’t carry out that change." }
+          state: {
+            status: "failed",
+            message: "That change belongs to a screen that isn’t open any more."
+          }
         });
         return;
       }
 
       dispatch({ type: "command", id: messageId, state: { status: "confirming" } });
 
-      const load = adapter.getProposalPayload
-        ? adapter.getProposalPayload(proposal.proposalId)
-        : Promise.resolve(undefined);
+      const load = editorCommand || !adapter.getProposalPayload
+        ? Promise.resolve(undefined)
+        : adapter.getProposalPayload(proposal.proposalId);
 
       load
-        .then((payload) => command(payload))
+        .then((payload) => (editorCommand ? editorCommand() : appCommand!(payload)))
         .then((outcome) => {
           dispatch({
             type: "command",
@@ -486,7 +492,7 @@ export function AssistantProvider({
           void adapter.acknowledgeProposal?.(proposal.proposalId, "failed");
         });
     },
-    [adapter, thread.messages]
+    [adapter, registry, thread.messages]
   );
 
   const dismissCommand = useCallback(

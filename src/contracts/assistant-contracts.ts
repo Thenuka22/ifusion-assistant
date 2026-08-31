@@ -145,6 +145,8 @@ export const assistantCommandProposalSchema = z.object({
   zoneId: z.number().int().positive().nullish().transform((value) => value ?? undefined),
   /** True for deletes and anything else that should make the user type the target's name. */
   destructive: z.boolean().nullish().transform((value) => value ?? false),
+  /** What a destructive change asks the user to type before Confirm becomes available. */
+  confirmPhrase: safeText,
   expiresAt: safeText,
   requiresConfirmation: z.boolean().nullish().transform((value) => value ?? true)
 });

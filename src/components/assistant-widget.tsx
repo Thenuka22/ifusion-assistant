@@ -442,6 +442,7 @@ function MessageRow({
           targetLabel={result.commandProposal.targetLabel}
           warnings={result.commandProposal.warnings}
           destructive={result.commandProposal.destructive}
+          confirmPhrase={result.commandProposal.confirmPhrase}
           state={message.command}
           allowed={
             result.commandProposal.destructive

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   ArrowRight,
   Check,
@@ -230,6 +231,7 @@ export function CommandProposalCard({
   targetLabel,
   warnings,
   destructive,
+  confirmPhrase,
   state,
   allowed,
   onConfirm,
@@ -241,13 +243,20 @@ export function CommandProposalCard({
   targetLabel: string;
   warnings: string[];
   destructive: boolean;
+  confirmPhrase?: string;
   state: CommandState | undefined;
   allowed: boolean;
   onConfirm: () => void;
   onDismiss: () => void;
   onOpenLink?: (href: string) => void;
 }) {
+  const [typed, setTyped] = useState("");
   const settled = state?.status === "done" || state?.status === "failed" || state?.status === "dismissed";
+
+  // Something irreversible asks to be spelled out, so it cannot happen on a mis-click.
+  const phraseRequired = destructive && Boolean(confirmPhrase);
+  const phraseMatches =
+    !phraseRequired || typed.trim().toLocaleLowerCase() === (confirmPhrase ?? "").trim().toLocaleLowerCase();
 
   return (
     <div className="assistant-proposal">
@@ -281,13 +290,28 @@ export function CommandProposalCard({
       )}
       {state?.status === "dismissed" && <p className="assistant-muted">Cancelled — nothing was changed.</p>}
 
+      {!settled && phraseRequired && allowed && (
+        <label className="assistant-confirm-phrase">
+          <span>
+            Type <strong>{confirmPhrase}</strong> to confirm
+          </span>
+          <input
+            type="text"
+            value={typed}
+            onChange={(event) => setTyped(event.target.value)}
+            autoComplete="off"
+            className="assistant-input"
+          />
+        </label>
+      )}
+
       {!settled && (
         <div className="assistant-proposal__actions">
           {allowed ? (
             <button
               type="button"
               onClick={onConfirm}
-              disabled={state?.status === "confirming"}
+              disabled={state?.status === "confirming" || !phraseMatches}
               className={
                 destructive
                   ? "assistant-button assistant-button--danger"
