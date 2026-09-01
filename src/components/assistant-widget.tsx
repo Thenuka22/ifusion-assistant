@@ -196,19 +196,13 @@ export function AssistantWidget() {
                   <span className="assistant-avatar__presence" />
                 </div>
                 <div className="assistant-panel__titles">
-                  <div className="assistant-panel__title-row">
-                    <h2>{adapter.title ?? "iFusion Assistant"}</h2>
-                    <span className="assistant-status">
-                      <span aria-hidden="true" className="assistant-status__dot" />
-                      Online
-                    </span>
-                  </div>
-                  {contextLabel ? (
+                  <h2>{adapter.title ?? "iFusion Assistant"}</h2>
+                  {/* Only when there is something to say. The dot on the avatar already says it is
+                      here, so the header does not repeat itself. */}
+                  {contextLabel && (
                     <p className="assistant-context-chip" title="I can see this screen">
                       {contextLabel}
                     </p>
-                  ) : (
-                    <p className="assistant-panel__subtitle">{adapter.subtitle ?? "Here to help"}</p>
                   )}
                 </div>
               </div>
@@ -273,7 +267,10 @@ export function AssistantWidget() {
               <label className="assistant-sr-only" htmlFor="assistant-question">
                 Ask the assistant
               </label>
-              <textarea
+              {/* Textarea and controls share one bordered box, so the composer reads as a single
+                  place to type rather than a field with buttons loose beneath it. */}
+              <div className="assistant-composer__box">
+                <textarea
                 id="assistant-question"
                 ref={inputRef}
                 value={question}
@@ -337,6 +334,7 @@ export function AssistantWidget() {
                     <span>Ask</span>
                   </button>
                 </div>
+              </div>
               </div>
               <p className="assistant-footnote">
                 <ShieldCheck aria-hidden="true" size={12} />

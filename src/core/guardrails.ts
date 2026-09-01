@@ -61,9 +61,12 @@ export function getRefusalMessage(
       return "I can help with periods of up to 31 days. Please choose a shorter range.";
     case "tool_limit_reached":
       return "That request needs a few more steps. Please ask for one thing at a time.";
+    // Told apart on purpose: one is the model being unreachable, the other is it answering in a
+    // shape we cannot use. They need different things done about them, so they read differently.
     case "model_unavailable":
+      return "I can’t reach the language model at the moment. It’s usually brief — please try again shortly.";
     case "malformed_model_output":
-      return "I couldn’t complete that request right now. Please try again shortly.";
+      return "The model replied in a form I couldn’t read. Try rephrasing, and if it keeps happening the configured model may not support this.";
     case "agent_disabled":
       return "The assistant isn’t available right now.";
     case "out_of_section":
