@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, Loader2, MessageSquarePlus, Paperclip, Send, ShieldCheck, Sparkles, X } from "lucide-react";
+import { ArrowRight, Loader2, MessageSquarePlus, Paperclip, Send, X } from "lucide-react";
 import { ASSISTANT_MAX_QUESTION_LENGTH } from "../contracts/assistant-contracts";
 import { useAssistant, type ThreadMessage } from "../core/assistant-provider";
 import { getFriendlyName, maskSensitiveNumbers } from "../core/guardrails";
@@ -208,10 +208,7 @@ export function AssistantWidget() {
                   <span className="assistant-avatar__presence" />
                 </div>
                 <div className="assistant-panel__titles">
-                  <h2>
-                    <Sparkles aria-hidden="true" size={13} className="assistant-title-spark" />
-                    {adapter.title ?? "iFusion Assistant"}
-                  </h2>
+                  <h2>{adapter.title ?? "iFusion Assistant"}</h2>
                   {/* Only when there is something to say. The dot on the avatar already says it is
                       here, so the header does not repeat itself. */}
                   {contextLabel && (
@@ -247,9 +244,9 @@ export function AssistantWidget() {
                       <p className="assistant-intro__title">{timeOfDayGreeting(friendlyName)}</p>
                       <p className="assistant-intro__body">
                         {contextLabel
-                          ? `I’m looking at ${contextLabel} with you — ask me about it, or hand me some of the work.`
+                          ? `I’m looking at ${contextLabel} with you. Ask me about it, or hand me some of the work.`
                           : adapter.subtitle ??
-                            "Ask me anything about your setup — routes, fares, vehicles — and I can fill in the editors for you."}
+                            "Ask me about your routes, fares, vehicles and drivers, and I can fill in the editors for you."}
                       </p>
                     </div>
                     <SuggestionChips suggestions={starters} onPick={submit} label="Get started" />
@@ -362,10 +359,6 @@ export function AssistantWidget() {
                 </div>
               </div>
               </div>
-              <p className="assistant-footnote">
-                <ShieldCheck aria-hidden="true" size={12} />
-                Read-only <span aria-hidden="true">·</span> I never save or delete without asking
-              </p>
             </form>
           </aside>
         </>
@@ -395,7 +388,7 @@ function TypingBubble({ polling }: { polling: boolean }) {
   }, []);
 
   const phrase = polling
-    ? "Still on it — a moment more…"
+    ? "Still on it, a moment more…"
     : THINKING_PHRASES[tick % THINKING_PHRASES.length];
 
   return (

@@ -64,7 +64,7 @@ export function getRefusalMessage(
     // Told apart on purpose: one is the model being unreachable, the other is it answering in a
     // shape we cannot use. They need different things done about them, so they read differently.
     case "model_unavailable":
-      return "I can’t reach the language model at the moment. It’s usually brief — please try again shortly.";
+      return "I can’t reach the language model at the moment. It’s usually brief; please try again shortly.";
     case "malformed_model_output":
       return "The model replied in a form I couldn’t read. Try rephrasing, and if it keeps happening the configured model may not support this.";
     case "agent_disabled":
