@@ -42,6 +42,7 @@
 
 /* ------------------------------------------------------------------ launcher */
 
+/* The ring is the widget's one flourish: a quiet accent gradient around the face. */
 .assistant-launcher {
   position: fixed;
   right: var(--asst-inset, 1rem);
@@ -52,18 +53,20 @@
   height: 3.75rem;
   padding: 2px;
   cursor: pointer;
-  border: 1px solid var(--asst-hairline);
+  border: 0;
   border-radius: 999px;
-  background: var(--asst-surface);
-  box-shadow: 0 10px 30px -12px rgba(12, 17, 24, 0.45);
-  transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1),
-    border-color 160ms ease, box-shadow 160ms ease;
+  background: linear-gradient(
+    140deg,
+    var(--asst-accent-color),
+    color-mix(in srgb, var(--asst-accent-color) 35%, var(--asst-success-color))
+  );
+  box-shadow: 0 10px 30px -12px rgba(12, 17, 24, 0.5);
+  transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 160ms ease;
 }
 
 .assistant-launcher:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--asst-accent-color) 55%, transparent);
-  box-shadow: 0 16px 34px -14px var(--asst-accent-ring-color);
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 16px 36px -14px var(--asst-accent-ring-color);
 }
 
 .assistant-launcher:focus-visible {
@@ -72,7 +75,7 @@
 }
 
 .assistant-launcher[aria-expanded="true"] {
-  border-color: var(--asst-accent-color);
+  box-shadow: 0 0 0 4px var(--asst-accent-ring-color);
 }
 
 .assistant-avatar__image {
@@ -250,12 +253,27 @@
 }
 
 .assistant-panel__titles h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   margin: 0;
   font-size: 0.9375rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.2;
   color: var(--asst-fg);
+}
+
+.assistant-title-spark {
+  flex: none;
+  color: var(--asst-accent-color);
+}
+
+.assistant-panel__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.15rem;
 }
 
 /* Says, in the user's own words, what the assistant can currently see. */
@@ -658,6 +676,17 @@
   box-shadow: 0 0 0 3px var(--asst-accent-ring-color);
 }
 
+.assistant-message__bubble .assistant-chip {
+  border-color: color-mix(in srgb, var(--asst-accent-color) 32%, transparent);
+  background: color-mix(in srgb, var(--asst-accent-color) 6%, transparent);
+  color: var(--asst-accent-color);
+}
+
+.assistant-message__bubble .assistant-chip:hover {
+  border-color: var(--asst-accent-color);
+  background: color-mix(in srgb, var(--asst-accent-color) 12%, transparent);
+}
+
 /* ------------------------------------------------------------------ composer */
 
 .assistant-composer {
@@ -718,6 +747,70 @@
 .assistant-counter {
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+  color: var(--asst-fg-subtle);
+}
+
+.assistant-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  cursor: pointer;
+  border: 0;
+  border-radius: 999px;
+  background: var(--asst-accent-color);
+  color: var(--asst-accent-on-color);
+  transition: background 120ms ease, transform 120ms ease, opacity 120ms ease;
+}
+
+.assistant-send:hover:not(:disabled) {
+  background: var(--asst-accent-strong-color);
+  transform: scale(1.05);
+}
+
+.assistant-send:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--asst-accent-ring-color);
+}
+
+.assistant-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* ------------------------------------------------------------------- typing */
+
+.assistant-typing {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.assistant-typing__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.assistant-typing__dots span {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--asst-accent-color) 75%, var(--asst-fg-subtle));
+  animation: assistant-bounce 1.2s ease-in-out infinite;
+}
+
+.assistant-typing__dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.assistant-typing__dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.assistant-typing__text {
+  font-size: 0.8125rem;
   color: var(--asst-fg-subtle);
 }
 
@@ -871,6 +964,19 @@
   }
 }
 
+@keyframes assistant-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
 @keyframes assistant-pulse {
   0%,
   100% {
@@ -897,6 +1003,7 @@
   }
 
   .assistant-thinking__dot,
+  .assistant-typing__dots span,
   .assistant-spin {
     animation: none;
   }

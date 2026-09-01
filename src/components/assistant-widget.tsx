@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, Loader2, Paperclip, Send, ShieldCheck, X } from "lucide-react";
+import { ArrowRight, Loader2, MessageSquarePlus, Paperclip, Send, ShieldCheck, Sparkles, X } from "lucide-react";
 import { ASSISTANT_MAX_QUESTION_LENGTH } from "../contracts/assistant-contracts";
 import { useAssistant, type ThreadMessage } from "../core/assistant-provider";
 import { getFriendlyName, maskSensitiveNumbers } from "../core/guardrails";
@@ -13,7 +13,6 @@ import {
   QueuedCard,
   RefusalCard,
   SuggestionChips,
-  ThinkingLine,
   UiActionCard
 } from "./result-cards";
 
@@ -35,6 +34,19 @@ function rememberGreeting(userName: string) {
     // A blocked storage API should not stop the welcome from appearing.
   }
 }
+
+/** Openers that read like a colleague at the next desk, not a splash screen. */
+function timeOfDayGreeting(name: string) {
+  const hour = new Date().getHours();
+  const part = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening";
+  return `${part}, ${name}.`;
+}
+
+/**
+ * Rotated while waiting, so a slow answer feels attended to rather than stuck. None of them claim
+ * anything about what is happening — they are body language, not status.
+ */
+const THINKING_PHRASES = ["Thinking…", "Having a look…", "Pulling that together…"];
 
 export function AssistantWidget() {
   const assistant = useAssistant();
@@ -196,7 +208,10 @@ export function AssistantWidget() {
                   <span className="assistant-avatar__presence" />
                 </div>
                 <div className="assistant-panel__titles">
-                  <h2>{adapter.title ?? "iFusion Assistant"}</h2>
+                  <h2>
+                    <Sparkles aria-hidden="true" size={13} className="assistant-title-spark" />
+                    {adapter.title ?? "iFusion Assistant"}
+                  </h2>
                   {/* Only when there is something to say. The dot on the avatar already says it is
                       here, so the header does not repeat itself. */}
                   {contextLabel && (
@@ -206,9 +221,22 @@ export function AssistantWidget() {
                   )}
                 </div>
               </div>
-              <button type="button" aria-label="Close assistant" onClick={() => setOpen(false)} className="assistant-icon-button">
-                <X aria-hidden="true" size={16} />
-              </button>
+              <div className="assistant-panel__actions">
+                {messages.length > 0 && (
+                  <button
+                    type="button"
+                    aria-label="Start a new conversation"
+                    title="New conversation"
+                    onClick={reset}
+                    className="assistant-icon-button"
+                  >
+                    <MessageSquarePlus aria-hidden="true" size={16} />
+                  </button>
+                )}
+                <button type="button" aria-label="Close assistant" onClick={() => setOpen(false)} className="assistant-icon-button">
+                  <X aria-hidden="true" size={16} />
+                </button>
+              </div>
             </header>
 
             <div className="assistant-thread">
@@ -216,9 +244,12 @@ export function AssistantWidget() {
                 <AssistantBubble avatarSrc={adapter.avatarSrc}>
                   <div className="assistant-stack">
                     <div>
-                      <p className="assistant-intro__title">How can I help{contextLabel ? " here" : ""}?</p>
+                      <p className="assistant-intro__title">{timeOfDayGreeting(friendlyName)}</p>
                       <p className="assistant-intro__body">
-                        {adapter.subtitle ?? "Ask me about your data, and I can help fill in the editors."}
+                        {contextLabel
+                          ? `I’m looking at ${contextLabel} with you — ask me about it, or hand me some of the work.`
+                          : adapter.subtitle ??
+                            "Ask me anything about your setup — routes, fares, vehicles — and I can fill in the editors for you."}
                       </p>
                     </div>
                     <SuggestionChips suggestions={starters} onPick={submit} label="Get started" />
@@ -237,7 +268,7 @@ export function AssistantWidget() {
 
               {busy && (
                 <AssistantBubble avatarSrc={adapter.avatarSrc}>
-                  <ThinkingLine text={status === "polling" ? "Still working on that…" : "Looking that up…"} />
+                  <TypingBubble polling={status === "polling"} />
                 </AssistantBubble>
               )}
 
@@ -316,22 +347,17 @@ export function AssistantWidget() {
                   </span>
                 </div>
                 <div className="assistant-composer__right">
-                  {messages.length > 0 && (
-                    <button type="button" onClick={reset} className="assistant-button">
-                      New conversation
-                    </button>
-                  )}
                   <button
                     type="submit"
+                    aria-label="Send"
                     disabled={question.trim().length < 2 || busy}
-                    className="assistant-button assistant-button--primary"
+                    className="assistant-send"
                   >
                     {busy ? (
-                      <Loader2 aria-hidden="true" size={15} className="assistant-spin" />
+                      <Loader2 aria-hidden="true" size={16} className="assistant-spin" />
                     ) : (
-                      <Send aria-hidden="true" size={15} />
+                      <Send aria-hidden="true" size={16} />
                     )}
-                    <span>Ask</span>
                   </button>
                 </div>
               </div>
@@ -354,6 +380,37 @@ function findQuestionBefore(messages: ThreadMessage[], index: number) {
     if (message?.role === "user") return message.text;
   }
   return "";
+}
+
+/**
+ * What the assistant looks like while it works: three breathing dots and a quiet phrase that
+ * changes now and then. Screen readers get one steady sentence instead of the rotation.
+ */
+function TypingBubble({ polling }: { polling: boolean }) {
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick((value) => value + 1), 2600);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const phrase = polling
+    ? "Still on it — a moment more…"
+    : THINKING_PHRASES[tick % THINKING_PHRASES.length];
+
+  return (
+    <div className="assistant-typing" role="status">
+      <span className="assistant-sr-only">The assistant is thinking</span>
+      <span aria-hidden="true" className="assistant-typing__dots">
+        <span />
+        <span />
+        <span />
+      </span>
+      <span aria-hidden="true" className="assistant-typing__text">
+        {phrase}
+      </span>
+    </div>
+  );
 }
 
 function AssistantBubble({ children, avatarSrc }: { children: ReactNode; avatarSrc: string }) {
