@@ -94,12 +94,15 @@ export function ClarificationCard({
 
 export function RefusalCard({
   reason,
+  detail,
   question,
   canEdit,
   suggestions,
   onPick
 }: {
   reason: string;
+  /** The server's own explanation. It knows why; the canned lines below are only for when it did not say. */
+  detail?: string;
   question: string;
   canEdit: boolean;
   suggestions: string[];
@@ -109,7 +112,7 @@ export function RefusalCard({
     <div className="assistant-stack">
       <p className="assistant-line">
         <ShieldCheck aria-hidden="true" size={16} className="assistant-line__icon" />
-        <span>{getRefusalMessage(reason, question, { canEdit })}</span>
+        <span>{detail?.trim() ? detail : getRefusalMessage(reason, question, { canEdit })}</span>
       </p>
       {reason === "out_of_scope" && (
         <SuggestionChips suggestions={suggestions} onPick={onPick} label="Things I can help with" />

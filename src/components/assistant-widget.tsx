@@ -514,6 +514,7 @@ function MessageRow({
       {result.resultType === "refusal" && result.refusal && (
         <RefusalCard
           reason={result.refusal.reason}
+          detail={result.refusal.detail}
           question={previousQuestion}
           canEdit={Boolean(activeCapability)}
           suggestions={(capabilities?.examples ?? []).slice(0, 2)}
