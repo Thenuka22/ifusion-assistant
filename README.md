@@ -85,3 +85,57 @@ typed by hand.
 Real writes asked for in chat ("save it", "delete this") arrive as a `commandProposal` instead: the
 widget shows a confirmation card, and on confirm the host app runs the command from its own
 `adapter.commands` map — again, its ordinary endpoint under the user's own token.
+
+Fill cells address **fare stages** (`fromFareStageId`/`toFareStageId`, the `core.Fares` columns).
+Since 0.5 the parsed cell also carries the older `fromStageId`/`toStageId` names with the same
+values, so an editor written against them keeps working.
+
+An applied fill remembers the editor's `signature` and the adapter's `scopeKey`. Undo is offered
+only while both still match: an undo made for one table or one company never runs against another.
+
+## Who, and for which company (0.5)
+
+```ts
+const adapter: AssistantAdapter = {
+  app: "ticketing",
+  user: { name: session.name, id: session.userId },   // id: stable key for the stored thread
+  scopeKey: String(session.companyId),                  // one conversation per company
+  permissions: { canUpdate, canDelete, canInsert },     // canInsert is optional
+  // …
+};
+```
+
+The conversation is kept in `sessionStorage` under the app, the user id (the display name only
+when no id is given) and the scope. Changing `scopeKey` loads that scope's own thread and drops
+anything in flight, so a late answer for the old company cannot land in the new one.
+
+Requests are one at a time, aborted on reset and unmount, and an answer that arrives after either
+is ignored. A question that failed, or that the service turned away for now (quota, timeout, too
+long), goes back into the composer; when the service says how long to wait, send is held with a
+countdown. Messages are limited to 4,000 characters, the same limit as the service; a longer paste
+is not cut off, it is refused with the count.
+
+## Fare setup (0.5)
+
+The service can prepare fare stages and fare tables for one or more routes, from typed
+instructions, a pasted table or a photo, from any screen. It is negotiated, never assumed:
+
+- the host supplies `adapter.fareSetup.open(proposal, { messageId })`, which opens its own review
+  screen; and
+- `capabilities.fareSetup.enabled` is true on the service.
+
+Only then does the widget send `accepts: ["fareSetup"]` with each question (and with an image
+upload), and only then does the service return `resultType: "fareSetup"` with a
+`FareSetupProposal`. An older widget, or a host without a review screen, never receives one.
+
+The `FareSetupCard` summarises the proposal per route and offers **Review and save**. The widget
+saves nothing: the host reviews the proposal, saves each route through its own API under the
+user's own permissions, and reports the outcome to the service itself. A draft keeps its
+`proposalId` across clarifying turns and bumps `revision`; only the newest revision's card can be
+opened, older ones read "Superseded by a newer draft".
+
+With fare setup available, a photo can be attached on any screen: it waits as a chip and goes with
+the next message ("Adult fares for route 12 from 1 October"). On the fare editor with a table open,
+a photo is still read straight into the grid as before.
+
+The wire contract is `docs/assistant-fare-setup.md` in the Reporting API repository.
