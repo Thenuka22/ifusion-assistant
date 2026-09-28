@@ -18,18 +18,44 @@ export type UiActionKind = (typeof uiActionKinds)[number];
 export const uiActionSources = ["instruction", "image"] as const;
 export type UiActionSource = (typeof uiActionSources)[number];
 
-/** A price as the fare grid stores it: digits with up to two decimals, no symbol, no sign. */
-export const FARE_VALUE_PATTERN = /^\d+(\.\d{1,2})?$/;
+/** A price as the fare grid stores it: up to eight digits and two decimals, no symbol, no sign. */
+export const FARE_VALUE_PATTERN = /^\d{1,8}(\.\d{1,2})?$/;
 
 export const MAX_UI_ACTION_CELLS = 500;
 
-export const fareTriangleCellSchema = z.object({
-  fromStageId: z.number().int().positive(),
-  toStageId: z.number().int().positive(),
-  fareValue: z.string().regex(FARE_VALUE_PATTERN),
-  /** Present for image extraction. Below ~0.8 the UI flags the cell for a closer look. */
-  confidence: z.number().min(0).max(1).optional()
-});
+/**
+ * One fare cell, addressed by fare stage (`core.Fares.FromFareStageId`/`ToFareStageId`).
+ *
+ * The canonical names are `fromFareStageId`/`toFareStageId`. Servers before 0.5 sent
+ * `fromStageId`/`toStageId`; either spelling is accepted, and both are present on the parsed value
+ * so an editor written against the old names keeps working.
+ */
+export const fareTriangleCellSchema = z
+  .preprocess(
+    (raw) => {
+      if (!raw || typeof raw !== "object") return raw;
+      const cell = raw as Record<string, unknown>;
+      return {
+        ...cell,
+        fromFareStageId: cell.fromFareStageId ?? cell.fromStageId,
+        toFareStageId: cell.toFareStageId ?? cell.toStageId
+      };
+    },
+    z.object({
+      fromFareStageId: z.number().int().positive(),
+      toFareStageId: z.number().int().positive(),
+      fareValue: z.string().regex(FARE_VALUE_PATTERN),
+      /** Present for image extraction. Below ~0.8 the UI flags the cell for a closer look. */
+      confidence: z.number().min(0).max(1).nullish().transform((value) => value ?? undefined)
+    })
+  )
+  .transform((cell) => ({
+    ...cell,
+    /** @deprecated Use `fromFareStageId`. Kept so older editors still read the cell. */
+    fromStageId: cell.fromFareStageId,
+    /** @deprecated Use `toFareStageId`. */
+    toStageId: cell.toFareStageId
+  }));
 
 export type FareTriangleCell = z.infer<typeof fareTriangleCellSchema>;
 

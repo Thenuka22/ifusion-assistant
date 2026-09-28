@@ -46,7 +46,7 @@ export function getFriendlyName(userName: string) {
 export function getRefusalMessage(
   reason: string,
   question: string,
-  options?: { canEdit?: boolean }
+  options?: { canEdit?: boolean; retryAfterSeconds?: number }
 ) {
   if (isSensitiveRequest(question)) {
     return "To protect privacy, I don’t have access to sensitive details such as card numbers, ticket identifiers or personal information. I can still help with totals, trends and summaries.";
@@ -65,6 +65,14 @@ export function getRefusalMessage(
     // shape we cannot use. They need different things done about them, so they read differently.
     case "model_unavailable":
       return "I can’t reach the language model at the moment. It’s usually brief; please try again shortly.";
+    case "model_rate_limited":
+      return options?.retryAfterSeconds
+        ? `The language model is busy or its quota is used up. Please try again in ${formatWait(options.retryAfterSeconds)}; your message is still in the box.`
+        : "The language model is busy or its quota is used up. Please try again shortly; your message is still in the box.";
+    case "model_timeout":
+      return "The language model took too long to answer. Your message is still in the box, so you can send it again.";
+    case "input_too_long":
+      return "That message is longer than I can take in one go. Shorten it, or split a large table across two messages.";
     case "malformed_model_output":
       return "The model replied in a form I couldn’t read. Try rephrasing, and if it keeps happening the configured model may not support this.";
     case "agent_disabled":
@@ -76,12 +84,21 @@ export function getRefusalMessage(
   }
 }
 
+/** "40 seconds", "2 minutes": a wait as a person would say it. */
+export function formatWait(seconds: number) {
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
 /** The fallback for a request that never produced an answer. */
 export function getFriendlyRequestError(error: unknown, status?: number) {
   const code = status ?? readStatus(error);
   if (code === 401) return "Your session has expired. Please sign in again.";
   if (code === 403) return "The assistant isn’t available for your account right now.";
   if (code === 429) return "You’ve reached the current assistant limit. Please try again later.";
+  if (code === 413) return "That message is too large to send. Shorten it, or split it across two messages.";
+  if (code === 504) return "The assistant took too long to answer. Your message is still in the box; please try again.";
   return "I couldn’t complete that request right now. Please try again shortly.";
 }
 

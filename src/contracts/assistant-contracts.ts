@@ -1,12 +1,21 @@
 import { z } from "zod";
 import { assistantContextSchema } from "./section-context";
+import { fareSetupProposalSchema } from "./fare-setup";
 import { uiActionSchema } from "./ui-actions";
 
 /** Nullish text and lists arrive from a strict-JSON model as empty rather than missing. */
 const safeText = z.string().nullish().transform((value) => value ?? "");
 const textList = z.array(z.string()).nullish().transform((value) => value ?? []);
 
-export const ASSISTANT_MAX_QUESTION_LENGTH = 600;
+/**
+ * The longest message the widget sends. Large enough for a pasted fare table; the server applies the
+ * same limit and says so explicitly rather than truncating.
+ */
+export const ASSISTANT_MAX_QUESTION_LENGTH = 4000;
+
+/** Result types a client can opt into. The server sends one only to a client that lists it. */
+export const assistantOptionalResultTypes = ["fareSetup"] as const;
+export type AssistantOptionalResultType = (typeof assistantOptionalResultTypes)[number];
 
 export const assistantQuestionSchema = z
   .string()
@@ -21,7 +30,12 @@ export const assistantAskRequestSchema = z.object({
   /** Set when the question follows an uploaded image. */
   attachmentId: z.string().max(64).optional(),
   context: assistantContextSchema,
-  timeZone: z.string().max(64).optional()
+  timeZone: z.string().max(64).optional(),
+  /**
+   * Optional result types this client can render. Absent, the server keeps to the original set, so
+   * an older widget never receives something it cannot parse.
+   */
+  accepts: z.array(z.string().max(32)).max(8).optional()
 });
 
 export type AssistantAskRequest = z.infer<typeof assistantAskRequestSchema>;
@@ -59,6 +73,16 @@ export const assistantSectionCapabilitySchema = z.object({
   attachments: z.boolean().nullish().transform((value) => value ?? false)
 });
 
+/** Whether the service can prepare fare setups, and how large one may be. */
+export const assistantFareSetupCapabilitySchema = z.object({
+  enabled: z.boolean().nullish().transform((value) => value ?? false),
+  version: z.number().int().nonnegative().nullish().transform((value) => value ?? 0),
+  maxRoutes: z.number().int().nonnegative().nullish().transform((value) => value ?? 0),
+  maxFareStages: z.number().int().nonnegative().nullish().transform((value) => value ?? 0)
+});
+
+export type AssistantFareSetupCapability = z.infer<typeof assistantFareSetupCapabilitySchema>;
+
 export const assistantCapabilitiesSchema = z.object({
   enabled: z.boolean(),
   maxQuestionLength: z.number().int().positive().nullish().transform((value) => value ?? ASSISTANT_MAX_QUESTION_LENGTH),
@@ -68,7 +92,10 @@ export const assistantCapabilitiesSchema = z.object({
   maxUploadBytes: z.number().int().positive().nullish().transform((value) => value ?? 8 * 1024 * 1024),
   reports: z.array(assistantReportCapabilitySchema).nullish().transform((value) => value ?? []),
   sections: z.array(assistantSectionCapabilitySchema).nullish().transform((value) => value ?? []),
-  examples: textList
+  examples: textList,
+  fareSetup: assistantFareSetupCapabilitySchema
+    .nullish()
+    .transform((value) => value ?? { enabled: false, version: 0, maxRoutes: 0, maxFareStages: 0 })
 });
 
 export type AssistantCapabilities = z.infer<typeof assistantCapabilitiesSchema>;
@@ -163,7 +190,9 @@ export const assistantQueuedSchema = z.object({
 
 export const assistantRefusalSchema = z.object({
   reason: safeText,
-  detail: safeText
+  detail: safeText,
+  /** Set when the provider asked us to wait, e.g. a quota; the widget holds the send button until then. */
+  retryAfterSeconds: z.number().int().nonnegative().nullish().transform((value) => value ?? undefined)
 });
 
 export const assistantResultTypes = [
@@ -173,7 +202,8 @@ export const assistantResultTypes = [
   "queued",
   "refusal",
   "uiAction",
-  "commandProposal"
+  "commandProposal",
+  "fareSetup"
 ] as const;
 
 export type AssistantResultType = (typeof assistantResultTypes)[number];
@@ -193,6 +223,8 @@ export const assistantQueryResponseSchema = z.object({
   clarification: assistantClarificationSchema.nullish(),
   queued: assistantQueuedSchema.nullish(),
   refusal: assistantRefusalSchema.nullish(),
+  /** A prepared fare setup for the host's review screen. Sent only to a client that accepts it. */
+  fareSetup: fareSetupProposalSchema.nullish(),
   followUps: textList
 });
 
