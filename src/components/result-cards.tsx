@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Check,
   CircleHelp,
+  ClipboardCheck,
   Loader2,
   ShieldCheck,
   TriangleAlert,
@@ -12,7 +13,8 @@ import {
   Wand2
 } from "lucide-react";
 import type { AssistantQueryResponse } from "../contracts/assistant-contracts";
-import type { ApplyState, CommandState } from "../core/assistant-provider";
+import { describeFareSetupRoute, type FareSetupProposal } from "../contracts/fare-setup";
+import type { ApplyState, CommandState, FareSetupStatus } from "../core/assistant-provider";
 import { getRefusalMessage } from "../core/guardrails";
 import { Markdown } from "./markdown";
 
@@ -98,7 +100,8 @@ export function RefusalCard({
   question,
   canEdit,
   suggestions,
-  onPick
+  onPick,
+  retryAfterSeconds
 }: {
   reason: string;
   /** The server's own explanation. It knows why; the canned lines below are only for when it did not say. */
@@ -107,12 +110,13 @@ export function RefusalCard({
   canEdit: boolean;
   suggestions: string[];
   onPick: Ask;
+  retryAfterSeconds?: number;
 }) {
   return (
     <div className="assistant-stack">
       <p className="assistant-line">
         <ShieldCheck aria-hidden="true" size={16} className="assistant-line__icon" />
-        <span>{detail?.trim() ? detail : getRefusalMessage(reason, question, { canEdit })}</span>
+        <span>{detail?.trim() ? detail : getRefusalMessage(reason, question, { canEdit, retryAfterSeconds })}</span>
       </p>
       {reason === "out_of_scope" && (
         <SuggestionChips suggestions={suggestions} onPick={onPick} label="Things I can help with" />
@@ -142,7 +146,8 @@ export function UiActionCard({
   warnings,
   onUndo,
   onApply,
-  onOpenLink
+  onOpenLink,
+  undoBlockedReason
 }: {
   answer: string;
   state: ApplyState | undefined;
@@ -150,6 +155,8 @@ export function UiActionCard({
   onUndo: () => void;
   onApply: () => void;
   onOpenLink?: (href: string) => void;
+  /** Set when undo exists but would no longer act on the table it filled. */
+  undoBlockedReason?: string;
 }) {
   return (
     <div className="assistant-stack">
@@ -189,13 +196,15 @@ export function UiActionCard({
               </ul>
             </details>
           )}
-          {state.canUndo ? (
+          {state.canUndo && !undoBlockedReason ? (
             <button type="button" onClick={onUndo} className="assistant-text-action">
               <Undo2 aria-hidden="true" size={14} />
               Undo this fill
             </button>
           ) : (
-            <p className="assistant-muted">Undo is no longer available.</p>
+            <p className="assistant-muted">
+              {undoBlockedReason ?? state.undoNote ?? "Undo is no longer available."}
+            </p>
           )}
         </div>
       )}
@@ -345,6 +354,111 @@ export function CommandProposalCard({
             Cancel
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A fare setup the assistant has prepared for review.
+ *
+ * Nothing is saved from here. The card says what the setup would do and hands it to the host's own
+ * review screen, where each route is checked, corrected and saved through the ticketing API under
+ * the user's own permissions.
+ */
+export function FareSetupCard({
+  answer,
+  proposal,
+  status,
+  allowed,
+  blockedReason,
+  onReview,
+  onOpenLink
+}: {
+  answer: string;
+  proposal: FareSetupProposal;
+  status: FareSetupStatus;
+  /** False when the role could not save what this setup contains. */
+  allowed: boolean;
+  blockedReason?: string;
+  onReview: () => void;
+  onOpenLink?: (href: string) => void;
+}) {
+  const superseded = status === "superseded";
+  const unresolved = [...proposal.unresolved, ...proposal.routes.flatMap((route) => route.unresolved)];
+  const warnings = [...proposal.warnings, ...proposal.routes.flatMap((route) => route.warnings)];
+
+  return (
+    <div className="assistant-proposal assistant-fare-setup">
+      {answer ? (
+        <Markdown onOpenLink={onOpenLink}>{answer}</Markdown>
+      ) : (
+        proposal.summary && <p className="assistant-proposal__summary">{proposal.summary}</p>
+      )}
+
+      {proposal.routes.length > 0 && (
+        <ul className="assistant-fare-setup__routes" aria-label="Routes in this setup">
+          {proposal.routes.map((route) => {
+            const counts = describeFareSetupRoute(route);
+            return (
+              <li key={route.key} className="assistant-fare-setup__route">
+                <span className="assistant-fare-setup__route-name">{route.routeLabel || `Route ${route.routeId}`}</span>
+                <span className="assistant-fare-setup__route-facts">
+                  {counts.fareStages} fare {counts.fareStages === 1 ? "stage" : "stages"}
+                  {counts.newFareStages > 0 ? ` (${counts.newFareStages} new)` : ""}
+                  {" · "}
+                  {counts.tables} {counts.tables === 1 ? "table" : "tables"}
+                  {" · "}
+                  {counts.prices} {counts.prices === 1 ? "price" : "prices"}
+                  {counts.needsReview > 0 && (
+                    <span className="assistant-fare-setup__review-count">
+                      {" · "}
+                      {counts.needsReview} to check
+                    </span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {warnings.length > 0 && (
+        <ul className="assistant-warnings">
+          {warnings.map((warning, index) => (
+            <li key={`${index}-${warning}`}>
+              <TriangleAlert aria-hidden="true" size={13} />
+              {warning}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {unresolved.length > 0 && (
+        <div className="assistant-fare-setup__unresolved">
+          <p className="assistant-fare-setup__unresolved-title">Still to settle before saving</p>
+          <ul>
+            {unresolved.map((issue, index) => (
+              <li key={`${index}-${issue.code}`}>{issue.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="assistant-proposal__actions">
+        {superseded ? (
+          <p className="assistant-muted">Superseded by a newer draft below.</p>
+        ) : allowed ? (
+          <button type="button" onClick={onReview} className="assistant-button assistant-button--primary">
+            <ClipboardCheck aria-hidden="true" size={14} />
+            Review and save
+          </button>
+        ) : (
+          <p className="assistant-muted">{blockedReason ?? "Your role can’t save fare tables."}</p>
+        )}
+      </div>
+      {!superseded && allowed && (
+        <p className="assistant-muted">Nothing is saved until you check it and press Save on the review screen.</p>
       )}
     </div>
   );

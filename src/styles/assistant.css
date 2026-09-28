@@ -590,6 +590,111 @@
   background: var(--asst-surface);
 }
 
+/* ---------------------------------------------------------------- fare setup */
+
+.assistant-fare-setup__routes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assistant-fare-setup__route {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--asst-hairline);
+  border-radius: var(--asst-radius-sm);
+  background: var(--asst-surface);
+  font-size: 0.8125rem;
+}
+
+.assistant-fare-setup__route-name {
+  min-width: 0;
+  font-weight: 600;
+  color: var(--asst-fg);
+  overflow-wrap: anywhere;
+}
+
+.assistant-fare-setup__route-facts {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--asst-fg-muted);
+}
+
+.assistant-fare-setup__review-count {
+  font-weight: 600;
+  color: var(--asst-warn-color);
+}
+
+.assistant-fare-setup__unresolved {
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--asst-radius-sm);
+  background: var(--asst-warn-soft-color);
+  color: var(--asst-warn-color);
+  font-size: 0.8125rem;
+}
+
+.assistant-fare-setup__unresolved-title {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+}
+
+.assistant-fare-setup__unresolved ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.assistant-attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.4rem;
+  padding: 0.3rem 0.3rem 0.3rem 0.6rem;
+  border: 1px solid var(--asst-border-color);
+  border-radius: var(--asst-radius-sm);
+  background: var(--asst-surface-sunken);
+  font-size: 0.75rem;
+  color: var(--asst-fg);
+}
+
+.assistant-attachment-chip__name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-attachment-chip .assistant-muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-composer .assistant-line--danger,
+.assistant-composer > .assistant-muted {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 480px) {
+  .assistant-fare-setup__route {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .assistant-attachment-chip .assistant-muted {
+    display: none;
+  }
+}
+
 /* ------------------------------------------------------------------- buttons */
 
 .assistant-button {

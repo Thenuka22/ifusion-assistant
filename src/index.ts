@@ -3,8 +3,11 @@ export {
   assistantAskRequestSchema,
   assistantCapabilitiesSchema,
   assistantCommandProposalSchema,
+  assistantFareSetupCapabilitySchema,
+  assistantOptionalResultTypes,
   assistantQueryResponseSchema,
   assistantQuestionSchema,
+  assistantRefusalSchema,
   assistantResultTypes,
   assistantSectionCapabilitySchema,
   isGuid,
@@ -14,6 +17,8 @@ export {
   type AssistantClarification,
   type AssistantCommandProposal,
   type AssistantEvidence,
+  type AssistantFareSetupCapability,
+  type AssistantOptionalResultType,
   type AssistantInsight,
   type AssistantQueryResponse,
   type AssistantRefusal,
@@ -22,6 +27,28 @@ export {
   type AssistantSectionCapability,
   type CommandOutcome
 } from "./contracts/assistant-contracts";
+
+export {
+  FARE_SETUP_PRICE_PATTERN,
+  FARE_SETUP_VERSION,
+  describeFareSetupRoute,
+  fareSetupIssueSchema,
+  fareSetupPriceSchema,
+  fareSetupPriceSources,
+  fareSetupProposalSchema,
+  fareSetupRouteSchema,
+  fareSetupStageSchema,
+  fareSetupStopAssignmentSchema,
+  fareSetupTableSchema,
+  type FareSetupIssue,
+  type FareSetupPrice,
+  type FareSetupPriceSource,
+  type FareSetupProposal,
+  type FareSetupRoute,
+  type FareSetupStage,
+  type FareSetupStopAssignment,
+  type FareSetupTable
+} from "./contracts/fare-setup";
 
 export {
   ASSISTANT_CONTEXT_VERSION,
@@ -37,6 +64,7 @@ export {
   FARE_VALUE_PATTERN,
   MAX_UI_ACTION_CELLS,
   fareTriangleApplyCellsSchema,
+  fareTriangleCellSchema,
   routeStagesApplyRowsSchema,
   uiActionBodySchema,
   uiActionKinds,
@@ -62,6 +90,8 @@ export {
   type AssistantContextInput,
   type AssistantContextValue,
   type CommandState,
+  type FareSetupStatus,
+  type PendingAttachment,
   type ThreadMessage
 } from "./core/assistant-provider";
 
@@ -71,6 +101,7 @@ export {
 } from "./core/capability-registry";
 
 export {
+  formatWait,
   getFriendlyName,
   getFriendlyRequestError,
   getRefusalMessage,
@@ -84,6 +115,7 @@ export { Markdown } from "./components/markdown";
 export {
   ClarificationCard,
   CommandProposalCard,
+  FareSetupCard,
   FriendlyFailure,
   InsightCard,
   QueuedCard,

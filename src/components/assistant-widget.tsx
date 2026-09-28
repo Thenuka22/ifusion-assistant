@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, Loader2, MessageSquarePlus, Paperclip, Send, X } from "lucide-react";
+import { ArrowRight, ImageIcon, Loader2, MessageSquarePlus, Paperclip, Send, X } from "lucide-react";
 import { ASSISTANT_MAX_QUESTION_LENGTH } from "../contracts/assistant-contracts";
+import type { FareSetupProposal } from "../contracts/fare-setup";
+import type { AssistantAdapter } from "../core/adapter";
 import { useAssistant, type ThreadMessage } from "../core/assistant-provider";
-import { getFriendlyName, maskSensitiveNumbers } from "../core/guardrails";
+import { formatWait, getFriendlyName, maskSensitiveNumbers } from "../core/guardrails";
 import {
   ClarificationCard,
   CommandProposalCard,
+  FareSetupCard,
   FriendlyFailure,
   InsightCard,
   QueuedCard,
@@ -48,6 +51,21 @@ function timeOfDayGreeting(name: string) {
  */
 const THINKING_PHRASES = ["Thinking…", "Having a look…", "Pulling that together…"];
 
+/** The fare tables zone, whose rights decide whether a prepared fare setup can be saved. */
+const FARES_ZONE_ID = 7;
+
+/** Seconds until `retryAt`, ticking once a second while there is something to count down. */
+function useCountdown(retryAt: number | null) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (retryAt === null) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [retryAt]);
+  return retryAt === null ? 0 : Math.max(0, Math.ceil((retryAt - now) / 1000));
+}
+
 export function AssistantWidget() {
   const assistant = useAssistant();
   const {
@@ -60,7 +78,14 @@ export function AssistantWidget() {
     isOpen,
     setOpen,
     ask,
-    reset
+    reset,
+    restoredQuestion,
+    consumeRestoredQuestion,
+    retryAt,
+    pendingAttachment,
+    setPendingAttachment,
+    fareSetupEnabled,
+    accepts
   } = assistant;
 
   const [question, setQuestion] = useState("");
@@ -73,6 +98,14 @@ export function AssistantWidget() {
 
   const friendlyName = getFriendlyName(adapter.user.name);
   const enabled = capabilities?.enabled ?? false;
+  const waitSeconds = useCountdown(retryAt);
+
+  // A question that failed comes back into the box, unless something new has been typed since.
+  useEffect(() => {
+    if (!restoredQuestion) return;
+    setQuestion((current) => (current.trim() ? current : restoredQuestion.text));
+    consumeRestoredQuestion();
+  }, [restoredQuestion, consumeRestoredQuestion]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -99,14 +132,20 @@ export function AssistantWidget() {
 
   const maxLength = capabilities?.maxQuestionLength ?? ASSISTANT_MAX_QUESTION_LENGTH;
   const busy = status !== "idle";
+  // Nothing is cut off: an over-long message is said to be over-long and is not sent.
+  const tooLong = question.length > maxLength;
+  const waiting = waitSeconds > 0;
+  const canSend =
+    !busy && !waiting && !tooLong && (question.trim().length >= 2 || Boolean(pendingAttachment));
 
-  // The upload button exists only where both the server and the open editor allow it, so a screen
-  // can never offer something the API would turn away.
-  const canUpload =
-    Boolean(adapter.uploadAttachment) &&
+  // A photo straight into the open fare grid needs both the server and the editor to allow it, so a
+  // screen can never offer something the API would turn away.
+  const editorTakesImage =
     Boolean(sectionCapability?.attachments) &&
     Boolean(activeCapability?.attachments) &&
     !activeCapability?.getSnapshot().readOnly;
+  // Anywhere else a photo can still start a fare setup, when the host can review one.
+  const canUpload = Boolean(adapter.uploadAttachment) && (editorTakesImage || fareSetupEnabled);
 
   const starters = (
     activeCapability?.suggestions?.length
@@ -120,7 +159,8 @@ export function AssistantWidget() {
 
   function submit(next: string) {
     const trimmed = next.trim();
-    if (trimmed.length < 2 || busy) return;
+    if (busy || waiting || trimmed.length > maxLength) return;
+    if (trimmed.length < 2 && !pendingAttachment) return;
     setQuestion("");
     ask(trimmed);
   }
@@ -135,9 +175,21 @@ export function AssistantWidget() {
 
     setUpload({ state: "uploading", message: "Uploading the image…" });
     try {
-      const attachment = await adapter.uploadAttachment(file, assistant.buildContext());
+      const attachment = await adapter.uploadAttachment(
+        file,
+        assistant.buildContext(),
+        undefined,
+        accepts.length > 0 ? { accepts } : undefined
+      );
       setUpload(null);
-      ask("Read this fare table and fill in the grid.", { attachmentId: attachment.attachmentId });
+      if (editorTakesImage) {
+        // The open grid is the obvious place for it, so it is read straight away.
+        ask("Read this fare table and fill in the grid.", { attachmentId: attachment.attachmentId });
+      } else {
+        // Anywhere else the photo waits for the user to say what it is for.
+        setPendingAttachment({ attachmentId: attachment.attachmentId, name: file.name });
+        inputRef.current?.focus();
+      }
     } catch (error) {
       setUpload({
         state: "failed",
@@ -297,14 +349,45 @@ export function AssistantWidget() {
               </label>
               {/* Textarea and controls share one bordered box, so the composer reads as a single
                   place to type rather than a field with buttons loose beneath it. */}
+              {pendingAttachment && (
+                <p className="assistant-attachment-chip">
+                  <ImageIcon aria-hidden="true" size={14} />
+                  <span className="assistant-attachment-chip__name">{pendingAttachment.name}</span>
+                  <span className="assistant-muted">goes with your next message</span>
+                  <button
+                    type="button"
+                    aria-label="Remove the attached image"
+                    onClick={() => setPendingAttachment(null)}
+                    className="assistant-icon-button"
+                  >
+                    <X aria-hidden="true" size={14} />
+                  </button>
+                </p>
+              )}
+              {tooLong && (
+                <p id="assistant-question-limit" role="alert" className="assistant-line assistant-line--danger">
+                  That&apos;s {question.length.toLocaleString()} characters; the limit is{" "}
+                  {maxLength.toLocaleString()}. Shorten it or split it.
+                </p>
+              )}
+              {waiting && !tooLong && (
+                <p role="status" className="assistant-muted">
+                  The assistant asked for a pause. You can send again in {formatWait(waitSeconds)}.
+                </p>
+              )}
               <div className="assistant-composer__box">
                 <textarea
                 id="assistant-question"
                 ref={inputRef}
                 value={question}
                 rows={2}
-                maxLength={maxLength}
-                placeholder={adapter.placeholder ?? "Ask me about this screen…"}
+                aria-invalid={tooLong || undefined}
+                aria-describedby={tooLong ? "assistant-question-limit" : undefined}
+                placeholder={
+                  pendingAttachment
+                    ? "Say which route and ticket this table is for…"
+                    : adapter.placeholder ?? "Ask me about this screen…"
+                }
                 onChange={(event) => setQuestion(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
@@ -347,7 +430,7 @@ export function AssistantWidget() {
                   <button
                     type="submit"
                     aria-label="Send"
-                    disabled={question.trim().length < 2 || busy}
+                    disabled={!canSend}
                     className="assistant-send"
                   >
                     {busy ? (
@@ -477,6 +560,7 @@ function MessageRow({
           answer={result.answer}
           state={message.apply}
           warnings={result.uiAction?.warnings ?? []}
+          undoBlockedReason={undoBlockedReason(assistant, message)}
           onUndo={() => assistant.undoApply(message.id)}
           onApply={() => assistant.applyAction(message.id)}
           onOpenLink={adapter.onOpenLink}
@@ -503,6 +587,22 @@ function MessageRow({
         />
       )}
 
+      {result.resultType === "fareSetup" && result.fareSetup && (
+        <FareSetupCard
+          answer={result.answer}
+          proposal={result.fareSetup}
+          status={assistant.fareSetupStatus(message.id)}
+          allowed={Boolean(adapter.fareSetup) && fareSetupAllowed(adapter, result.fareSetup)}
+          blockedReason={
+            adapter.fareSetup
+              ? "Your role can’t save these fare tables."
+              : "Fare setups are reviewed in the ticketing app."
+          }
+          onReview={() => assistant.openFareSetup(message.id)}
+          onOpenLink={adapter.onOpenLink}
+        />
+      )}
+
       {result.resultType === "clarification" && result.clarification && (
         <ClarificationCard
           question={result.clarification.question}
@@ -519,10 +619,36 @@ function MessageRow({
           canEdit={Boolean(activeCapability)}
           suggestions={(capabilities?.examples ?? []).slice(0, 2)}
           onPick={onAsk}
+          retryAfterSeconds={result.refusal.retryAfterSeconds}
         />
       )}
 
       {result.resultType === "queued" && <QueuedCard />}
     </AssistantBubble>
   );
+}
+
+/** Why the undo on a fill no longer applies, or undefined while it still does. */
+function undoBlockedReason(
+  assistant: ReturnType<typeof useAssistant>,
+  message: Extract<ThreadMessage, { role: "assistant" }>
+) {
+  if (message.apply?.status !== "applied" || !message.apply.canUndo) return undefined;
+  const availability = assistant.undoAvailability(message.id);
+  return availability.ok ? undefined : availability.reason;
+}
+
+/**
+ * Whether the role could save what a setup contains: new tables need the insert right, prices on
+ * existing tables the update right. Cosmetic only — the ticketing API decides for real.
+ */
+function fareSetupAllowed(adapter: AssistantAdapter, proposal: FareSetupProposal) {
+  const permissions = adapter.permissions;
+  if (!permissions) return true;
+  const tables = proposal.routes.flatMap((route) => route.tables);
+  const creates = tables.some((table) => table.fareMasterId === null);
+  const updates = tables.some((table) => table.fareMasterId !== null);
+  if (creates && permissions.canInsert?.(FARES_ZONE_ID) === false) return false;
+  if (updates && !permissions.canUpdate(FARES_ZONE_ID)) return false;
+  return true;
 }
