@@ -6,6 +6,7 @@ import type {
   AssistantQueryResponse,
   CommandOutcome
 } from "../contracts/assistant-contracts";
+import type { FareSetupProposal } from "../contracts/fare-setup";
 import type { AssistantApp, AssistantContext } from "../contracts/section-context";
 
 /**
@@ -17,7 +18,17 @@ import type { AssistantApp, AssistantContext } from "../contracts/section-contex
  */
 export interface AssistantAdapter {
   app: AssistantApp;
-  user: { name: string };
+  /**
+   * The signed-in user. `id` is the stable identifier the conversation is stored under; without it
+   * the display name is used, which is what versions before 0.5 did.
+   */
+  user: { name: string; id?: string | number };
+  /**
+   * What the user is acting as — the company, in the ticketing app. The conversation is stored per
+   * scope, and changing it drops anything in flight and every pending undo, so an answer prepared
+   * for one company can never land in another.
+   */
+  scopeKey?: string;
   /** Path to the avatar image served by the host app. */
   avatarSrc: string;
   title?: string;
@@ -34,7 +45,9 @@ export interface AssistantAdapter {
   uploadAttachment?(
     file: File,
     context: AssistantContext,
-    onProgress?: (percent: number) => void
+    onProgress?: (percent: number) => void,
+    /** `accepts` lists the optional result types the upload may lead to, e.g. `["fareSetup"]`. */
+    options?: { accepts?: string[] }
   ): Promise<AssistantAttachment>;
 
   /**
@@ -57,6 +70,19 @@ export interface AssistantAdapter {
   permissions?: {
     canUpdate(zoneId?: number): boolean;
     canDelete(zoneId?: number): boolean;
+    /** Absent means "not known here"; the widget then leaves the decision to the API. */
+    canInsert?(zoneId?: number): boolean;
+  };
+
+  /**
+   * Present where the host has a fare-setup review screen. Its presence is what makes the widget
+   * ask the service for `fareSetup` results at all.
+   *
+   * `open` hands the proposal to the host, which reviews and saves it through its own API under
+   * the user's own permissions, and reports the outcome itself.
+   */
+  fareSetup?: {
+    open(proposal: FareSetupProposal, meta: { messageId: string }): void;
   };
 
   onOpenLink?(href: string): void;

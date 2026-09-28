@@ -13,6 +13,7 @@ import {
   type ReactNode
 } from "react";
 import type {
+  AssistantAskRequest,
   AssistantCapabilities,
   AssistantQueryResponse,
   AssistantSectionCapability
@@ -35,7 +36,14 @@ import { getFriendlyRequestError } from "./guardrails";
 /* --------------------------------------------------------------- thread state */
 
 export type ApplyState =
-  | { status: "applied"; appliedCount: number; skipped: { ref: string; reason: string }[]; canUndo: boolean }
+  | {
+      status: "applied";
+      appliedCount: number;
+      skipped: { ref: string; reason: string }[];
+      canUndo: boolean;
+      /** Why undo stopped being available, when it was withdrawn rather than never offered. */
+      undoNote?: string;
+    }
   | { status: "undone" }
   | { status: "unavailable"; reason: string };
 
@@ -60,7 +68,15 @@ export type ThreadMessage =
 type ThreadState = {
   messages: ThreadMessage[];
   sessionId: string;
+  /** The storage key this thread belongs to, so a thread is never written under another scope. */
+  scope: string;
 };
+
+/** Whether a fare-setup card is the newest revision of its draft. */
+export type FareSetupStatus = "current" | "superseded";
+
+/** An uploaded image waiting to go with the user's next message. */
+export type PendingAttachment = { attachmentId: string; name: string };
 
 const MAX_THREAD_MESSAGES = 30;
 
@@ -128,7 +144,7 @@ function threadReducer(state: ThreadState, action: ThreadAction): ThreadState {
     case "restore":
       return action.state;
     case "reset":
-      return { messages: [], sessionId: "" };
+      return { messages: [], sessionId: "", scope: state.scope };
     default:
       return state;
   }
@@ -161,8 +177,23 @@ export type AssistantContextValue = {
   buildContext(): AssistantContext;
   applyAction(messageId: string): void;
   undoApply(messageId: string): void;
+  /** Whether undo would still act on the editor it was made for; the reason when it would not. */
+  undoAvailability(messageId: string): { ok: true } | { ok: false; reason: string };
   runCommand(messageId: string): void;
   dismissCommand(messageId: string): void;
+  /** Optional result types this client asks the service for. */
+  accepts: string[];
+  /** True when the service prepares fare setups and the host can review them. */
+  fareSetupEnabled: boolean;
+  openFareSetup(messageId: string): void;
+  fareSetupStatus(messageId: string): FareSetupStatus;
+  /** A question to put back into the composer after it failed, so nothing typed is lost. */
+  restoredQuestion: { text: string; nonce: number } | null;
+  consumeRestoredQuestion(): void;
+  /** Epoch milliseconds before which the service asked not to be sent another question. */
+  retryAt: number | null;
+  pendingAttachment: PendingAttachment | null;
+  setPendingAttachment(attachment: PendingAttachment | null): void;
 };
 
 const AssistantStateContext = createContext<AssistantContextValue | null>(null);
@@ -195,17 +226,32 @@ export function AssistantProvider({
   context: AssistantContextInput;
   children: ReactNode;
 }) {
+  // A stable id and the scope (the company) key the conversation. The display name is only the
+  // fallback for hosts that do not supply an id, which is what versions before 0.5 keyed on.
+  const userKey = String(adapter.user.id ?? adapter.user.name.trim().toLocaleLowerCase());
+  const storageKey = `ifusion-assistant-thread:${adapter.app}:${userKey}:${adapter.scopeKey ?? ""}`;
+
   const [registry] = useState(() => new CapabilityRegistry());
-  const [thread, dispatch] = useReducer(threadReducer, { messages: [], sessionId: "" });
+  const [thread, dispatch] = useReducer(threadReducer, { messages: [], sessionId: "", scope: storageKey });
   const [capabilities, setCapabilities] = useState<AssistantCapabilities | null>(null);
   const [status, setStatus] = useState<"idle" | "asking" | "polling">("idle");
   const [isOpen, setOpen] = useState(false);
   const [pendingRun, setPendingRun] = useState<{ messageId: string; runId: string; delay: number } | null>(null);
+  const [restoredQuestion, setRestoredQuestion] = useState<{ text: string; nonce: number } | null>(null);
+  const [retryAt, setRetryAt] = useState<number | null>(null);
+  const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null);
 
   // Undo closures belong to the editor that made them, so they live outside reducer state and are
-  // dropped on reload — a card then honestly reports that undo is no longer available.
-  const undoRef = useRef(new Map<string, () => void>());
+  // dropped on reload — a card then honestly reports that undo is no longer available. Each one
+  // remembers which editor and which scope it was made against, and only runs there.
+  const undoRef = useRef(new Map<string, { undo: () => void; signature: string; scope: string }>());
   const actionRef = useRef(new Map<string, UiAction>());
+
+  // One question at a time, however fast the button is pressed; the controller aborts it on reset
+  // and unmount, and the generation makes any answer that arrives after either of those a no-op.
+  const inFlightRef = useRef(false);
+  const requestRef = useRef<AbortController | null>(null);
+  const generationRef = useRef(0);
 
   const registryVersion = useSyncExternalStore(
     registry.subscribe,
@@ -220,7 +266,26 @@ export function AssistantProvider({
   const contextRef = useRef(context);
   contextRef.current = context;
 
-  const storageKey = `ifusion-assistant-thread:${adapter.app}:${adapter.user.name.trim().toLocaleLowerCase()}`;
+  const scopeRef = useRef(storageKey);
+  scopeRef.current = storageKey;
+
+  const fareSetupEnabled = Boolean(adapter.fareSetup) && Boolean(capabilities?.fareSetup.enabled);
+  const accepts = useMemo(() => (fareSetupEnabled ? ["fareSetup"] : []), [fareSetupEnabled]);
+
+  /** Drops everything in flight: the request, the poll, and anything a late answer would touch. */
+  const abandonInFlight = useCallback(() => {
+    generationRef.current += 1;
+    requestRef.current?.abort();
+    requestRef.current = null;
+    inFlightRef.current = false;
+    setPendingRun(null);
+    setStatus("idle");
+  }, []);
+
+  useEffect(() => () => {
+    generationRef.current += 1;
+    requestRef.current?.abort();
+  }, []);
 
   /* capabilities */
   useEffect(() => {
@@ -235,30 +300,44 @@ export function AssistantProvider({
     return () => controller.abort();
   }, [adapter]);
 
-  /* thread persistence */
+  /* thread persistence — one thread per user and scope */
   useEffect(() => {
+    // A new scope (another company) starts from its own stored thread; nothing prepared under the
+    // old one may land here, so whatever was in flight is abandoned and every undo is forgotten.
+    abandonInFlight();
+    undoRef.current.clear();
+    actionRef.current.clear();
+    setPendingAttachment(null);
+    setRetryAt(null);
+
+    let restored: ThreadState = { messages: [], sessionId: "", scope: storageKey };
     try {
       const raw = window.sessionStorage.getItem(storageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as ThreadState;
-      if (!Array.isArray(parsed.messages)) return;
-      // Undo closures did not survive the reload; say so rather than offering a dead button.
-      const messages = parsed.messages.map((message) =>
-        message.role === "assistant" && message.apply?.status === "applied"
-          ? { ...message, apply: { ...message.apply, canUndo: false } }
-          : message
-      );
-      dispatch({ type: "restore", state: { messages, sessionId: parsed.sessionId ?? "" } });
+      const parsed = raw ? (JSON.parse(raw) as Partial<ThreadState>) : null;
+      if (parsed && Array.isArray(parsed.messages)) {
+        // Undo closures did not survive the reload; say so rather than offering a dead button.
+        const messages = parsed.messages.map((message) =>
+          message.role === "assistant" && message.apply?.status === "applied"
+            ? { ...message, apply: { ...message.apply, canUndo: false } }
+            : message
+        );
+        restored = { messages, sessionId: parsed.sessionId ?? "", scope: storageKey };
+      }
     } catch {
       // Blocked storage is not a reason to fail; the thread simply starts empty.
     }
-    // Restoring once per mount is the intent; the key is stable for a signed-in user.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageKey]);
+    dispatch({ type: "restore", state: restored });
+  }, [storageKey, abandonInFlight]);
 
   useEffect(() => {
+    // Written only under the key the thread was loaded for, so switching scope never copies one
+    // company's conversation into another's.
+    if (thread.scope !== storageKey) return;
     try {
-      window.sessionStorage.setItem(storageKey, JSON.stringify(thread));
+      window.sessionStorage.setItem(
+        storageKey,
+        JSON.stringify({ messages: thread.messages, sessionId: thread.sessionId })
+      );
     } catch {
       // Nothing here is worth interrupting the conversation for.
     }
@@ -312,7 +391,13 @@ export function AssistantProvider({
       }
 
       const result = capability.apply(action);
-      if (result.undo) undoRef.current.set(messageId, result.undo);
+      if (result.undo) {
+        undoRef.current.set(messageId, {
+          undo: result.undo,
+          signature: capability.signature ?? capability.id,
+          scope: scopeRef.current
+        });
+      }
       dispatch({
         type: "apply",
         id: messageId,
@@ -340,23 +425,49 @@ export function AssistantProvider({
     [applyToEditor]
   );
 
+  /** A refusal that says "try again later" keeps what was typed and, when told, how long to wait. */
+  const noteTransientRefusal = useCallback((response: AssistantQueryResponse, question: string) => {
+    if (response.resultType !== "refusal" || !response.refusal) return;
+    const reason = response.refusal.reason;
+    if (!TRANSIENT_REFUSALS.has(reason)) return;
+    setRestoredQuestion({ text: question, nonce: Date.now() });
+    const wait = response.refusal.retryAfterSeconds;
+    if (wait && wait > 0) setRetryAt(Date.now() + wait * 1000);
+  }, []);
+
   const ask = useCallback(
     (question: string, options?: { attachmentId?: string }) => {
-      const trimmed = question.trim();
-      if (trimmed.length < 2 || status !== "idle") return;
+      const attachmentId = options?.attachmentId ?? pendingAttachment?.attachmentId;
+      const trimmed = question.trim() || (attachmentId ? "Read this fare table." : "");
+      if (trimmed.length < 2 || inFlightRef.current || status !== "idle") return;
+      if (retryAt !== null && retryAt > Date.now()) return;
 
+      inFlightRef.current = true;
+      const generation = generationRef.current;
+      const controller = new AbortController();
+      requestRef.current = controller;
+
+      if (!options?.attachmentId && pendingAttachment) setPendingAttachment(null);
+      setRetryAt(null);
       dispatch({ type: "user", id: nextId("u"), text: trimmed });
       setStatus("asking");
 
+      const request: AssistantAskRequest = {
+        question: trimmed,
+        context: buildContext(),
+        ...(thread.sessionId ? { sessionId: thread.sessionId } : {}),
+        ...(attachmentId ? { attachmentId } : {}),
+        ...(accepts.length > 0 ? { accepts } : {})
+      };
+
       const messageId = nextId("a");
       adapter
-        .ask({
-          question: trimmed,
-          context: buildContext(),
-          ...(thread.sessionId ? { sessionId: thread.sessionId } : {}),
-          ...(options?.attachmentId ? { attachmentId: options.attachmentId } : {})
-        })
+        .ask(request, controller.signal)
         .then((response) => {
+          if (generation !== generationRef.current) return;
+          inFlightRef.current = false;
+          requestRef.current = null;
+
           if (response.resultType === "queued") {
             dispatch({ type: "assistant", id: messageId, response });
             if (response.sessionId) dispatch({ type: "session", sessionId: response.sessionId });
@@ -370,9 +481,18 @@ export function AssistantProvider({
           }
 
           finalize(messageId, response, "add");
+          noteTransientRefusal(response, trimmed);
           setStatus("idle");
         })
         .catch((error: unknown) => {
+          if (generation !== generationRef.current) return;
+          inFlightRef.current = false;
+          requestRef.current = null;
+          if (error instanceof DOMException && error.name === "AbortError") {
+            setStatus("idle");
+            return;
+          }
+
           const described = adapter.describeError?.(error);
           dispatch({
             type: "error",
@@ -380,24 +500,26 @@ export function AssistantProvider({
             text: described || getFriendlyRequestError(error),
             retry: trimmed
           });
+          setRestoredQuestion({ text: trimmed, nonce: Date.now() });
           setStatus("idle");
         });
     },
-    [adapter, buildContext, finalize, status, thread.sessionId]
+    [accepts, adapter, buildContext, finalize, noteTransientRefusal, pendingAttachment, retryAt, status, thread.sessionId]
   );
 
   /* A question that outlived the API's synchronous window is polled until the worker finishes it. */
   useEffect(() => {
     if (!pendingRun) return;
 
-    let cancelled = false;
+    const generation = generationRef.current;
     const controller = new AbortController();
+    const stale = () => controller.signal.aborted || generation !== generationRef.current;
 
     const timer = window.setTimeout(() => {
       adapter
         .getRun(pendingRun.runId, controller.signal)
         .then((response) => {
-          if (cancelled) return;
+          if (stale()) return;
           if (response.resultType === "queued") {
             setPendingRun({ ...pendingRun });
             return;
@@ -407,7 +529,7 @@ export function AssistantProvider({
           setStatus("idle");
         })
         .catch(() => {
-          if (cancelled) return;
+          if (stale()) return;
           dispatch({
             type: "error",
             id: nextId("e"),
@@ -419,7 +541,6 @@ export function AssistantProvider({
     }, pendingRun.delay);
 
     return () => {
-      cancelled = true;
       controller.abort();
       window.clearTimeout(timer);
     };
@@ -433,13 +554,47 @@ export function AssistantProvider({
     [applyToEditor]
   );
 
-  const undoApply = useCallback((messageId: string) => {
-    const undo = undoRef.current.get(messageId);
-    if (!undo) return;
-    undo();
-    undoRef.current.delete(messageId);
-    dispatch({ type: "apply", id: messageId, state: { status: "undone" } });
-  }, []);
+  const undoAvailability = useCallback(
+    (messageId: string): { ok: true } | { ok: false; reason: string } => {
+      const entry = undoRef.current.get(messageId);
+      if (!entry) return { ok: false, reason: "Undo is no longer available." };
+      if (entry.scope !== scopeRef.current) {
+        return { ok: false, reason: "That fill was made for another company, so it can’t be undone here." };
+      }
+      const capability = registry.getActive();
+      if (!capability || (capability.signature ?? capability.id) !== entry.signature) {
+        return { ok: false, reason: "Undo works only while the table it filled is still open." };
+      }
+      return { ok: true };
+    },
+    // The registry version is read so availability follows the user opening another table.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [registry, registryVersion]
+  );
+
+  const undoApply = useCallback(
+    (messageId: string) => {
+      const entry = undoRef.current.get(messageId);
+      if (!entry) return;
+      const availability = undoAvailability(messageId);
+      if (!availability.ok) {
+        // Never undo into something else: an undo keyed to the wrong table would overwrite it.
+        const message = thread.messages.find((item) => item.id === messageId);
+        if (message?.role === "assistant" && message.apply?.status === "applied") {
+          dispatch({
+            type: "apply",
+            id: messageId,
+            state: { ...message.apply, canUndo: false, undoNote: availability.reason }
+          });
+        }
+        return;
+      }
+      entry.undo();
+      undoRef.current.delete(messageId);
+      dispatch({ type: "apply", id: messageId, state: { status: "undone" } });
+    },
+    [thread.messages, undoAvailability]
+  );
 
   const runCommand = useCallback(
     (messageId: string) => {
@@ -506,13 +661,51 @@ export function AssistantProvider({
     [adapter, thread.messages]
   );
 
+  /** The message holding the newest revision of each fare-setup draft. */
+  const currentFareSetups = useMemo(() => {
+    const newest = new Map<string, { messageId: string; revision: number }>();
+    for (const message of thread.messages) {
+      if (message.role !== "assistant") continue;
+      const proposal = message.response.fareSetup;
+      if (message.response.resultType !== "fareSetup" || !proposal) continue;
+      const seen = newest.get(proposal.proposalId);
+      // A later message with the same revision replaces an earlier one: the thread order is the
+      // order the server answered in.
+      if (!seen || proposal.revision >= seen.revision) {
+        newest.set(proposal.proposalId, { messageId: message.id, revision: proposal.revision });
+      }
+    }
+    return new Set([...newest.values()].map((entry) => entry.messageId));
+  }, [thread.messages]);
+
+  const fareSetupStatus = useCallback(
+    (messageId: string): FareSetupStatus => (currentFareSetups.has(messageId) ? "current" : "superseded"),
+    [currentFareSetups]
+  );
+
+  const openFareSetup = useCallback(
+    (messageId: string) => {
+      if (!adapter.fareSetup || !currentFareSetups.has(messageId)) return;
+      const message = thread.messages.find((item) => item.id === messageId);
+      if (message?.role !== "assistant" || !message.response.fareSetup) return;
+      // The host opens its own review screen; it saves through its own API and reports the outcome
+      // itself, so the widget does not acknowledge anything here.
+      adapter.fareSetup.open(message.response.fareSetup, { messageId });
+    },
+    [adapter, currentFareSetups, thread.messages]
+  );
+
+  const consumeRestoredQuestion = useCallback(() => setRestoredQuestion(null), []);
+
   const reset = useCallback(() => {
+    abandonInFlight();
     undoRef.current.clear();
     actionRef.current.clear();
+    setPendingAttachment(null);
+    setRestoredQuestion(null);
+    setRetryAt(null);
     dispatch({ type: "reset" });
-    setPendingRun(null);
-    setStatus("idle");
-  }, []);
+  }, [abandonInFlight]);
 
   const sectionCapability = useMemo(() => {
     if (!capabilities) return null;
@@ -534,8 +727,18 @@ export function AssistantProvider({
       buildContext,
       applyAction,
       undoApply,
+      undoAvailability,
       runCommand,
-      dismissCommand
+      dismissCommand,
+      accepts,
+      fareSetupEnabled,
+      openFareSetup,
+      fareSetupStatus,
+      restoredQuestion,
+      consumeRestoredQuestion,
+      retryAt,
+      pendingAttachment,
+      setPendingAttachment
     }),
     [
       adapter,
@@ -550,8 +753,17 @@ export function AssistantProvider({
       buildContext,
       applyAction,
       undoApply,
+      undoAvailability,
       runCommand,
-      dismissCommand
+      dismissCommand,
+      accepts,
+      fareSetupEnabled,
+      openFareSetup,
+      fareSetupStatus,
+      restoredQuestion,
+      consumeRestoredQuestion,
+      retryAt,
+      pendingAttachment
     ]
   );
 
@@ -561,3 +773,6 @@ export function AssistantProvider({
     </CapabilityRegistryContext.Provider>
   );
 }
+
+/** Refusals that mean "not now" rather than "no": what was typed is kept for another go. */
+const TRANSIENT_REFUSALS = new Set(["model_rate_limited", "model_timeout", "model_unavailable", "input_too_long"]);
