@@ -124,7 +124,7 @@ instructions, a pasted table or a photo, from any screen. It is negotiated, neve
   screen; and
 - `capabilities.fareSetup.enabled` is true on the service.
 
-Only then does the widget send `accepts: ["fareSetup"]` with each question (and with an image
+Only then does the widget include `fareSetup` in `accepts` with each question (and with an image
 upload), and only then does the service return `resultType: "fareSetup"` with a
 `FareSetupProposal`. An older widget, or a host without a review screen, never receives one.
 
@@ -139,3 +139,30 @@ the next message ("Adult fares for route 12 from 1 October"). On the fare editor
 a photo is still read straight into the grid as before.
 
 The wire contract is `docs/assistant-fare-setup.md` in the Reporting API repository.
+
+## Panel, guidance and bulk fare editing (0.6)
+
+The panel resizes with pointer or keyboard, expands for longer conversations, and fills the
+mobile viewport. Stop aborts the active request/poll and keeps editor drafts. Reporting adapters
+can retain their own generation and polling endpoints while rendering the shared result cards.
+
+Clients advertise `guidance` and `bulkFareV2`. The latter permits validated fare actions up to
+14,400 cells; the service retains its 500-cell limit for older clients. Editor snapshots include
+the current unsaved prices, row order, membership and a revision fingerprint. The host rejects
+actions prepared for an older revision; Undo restores the preceding draft without saving.
+
+Guidance topics and official references are curated in the Reporting API. Explain this screen
+does not itself edit anything. Models without image input show a clear pasted-table alternative.
+Provider/model and image capabilities refresh on window focus and the
+`ifusion:assistant-configuration-changed` event after administrator activation.
+
+Both frontends currently consume synchronized `packages/assistant` snapshots with
+`file:./packages/assistant`. Copy this repository's `src` and `package.json` into both snapshots
+when releasing, then run `pnpm install` in each host to refresh the file dependency and lockfile.
+The host apps must compile the package through `transpilePackages`.
+
+Run `node qa/smoke.mjs` with Ticketing installed at the neighboring workspace path, or pass its
+absolute directory as the first argument. The fixture uses the actual panel and mocked data;
+it checks desktop/mobile sizing, keyboard controls, guidance and serious axe violations.
+Screenshots are generated under ignored `qa/screenshots`. This does not replace authenticated
+staging/provider checks described in `docs/assistant-upgrade-rollout.md` in the Reporting API.

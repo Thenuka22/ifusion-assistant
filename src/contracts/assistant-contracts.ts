@@ -14,7 +14,7 @@ const textList = z.array(z.string()).nullish().transform((value) => value ?? [])
 export const ASSISTANT_MAX_QUESTION_LENGTH = 4000;
 
 /** Result types a client can opt into. The server sends one only to a client that lists it. */
-export const assistantOptionalResultTypes = ["fareSetup"] as const;
+export const assistantOptionalResultTypes = ["fareSetup", "guidance"] as const;
 export type AssistantOptionalResultType = (typeof assistantOptionalResultTypes)[number];
 
 export const assistantQuestionSchema = z
@@ -85,6 +85,10 @@ export type AssistantFareSetupCapability = z.infer<typeof assistantFareSetupCapa
 
 export const assistantCapabilitiesSchema = z.object({
   enabled: z.boolean(),
+  provider: safeText,
+  model: safeText,
+  supportsImages: z.boolean().optional().default(true),
+  guidanceAvailable: z.boolean().optional().default(false),
   maxQuestionLength: z.number().int().positive().nullish().transform((value) => value ?? ASSISTANT_MAX_QUESTION_LENGTH),
   maxRangeDays: z.number().int().positive().nullish().transform((value) => value ?? 31),
   maxGroupRows: z.number().int().positive().nullish().transform((value) => value ?? 10),
@@ -141,7 +145,12 @@ export const assistantInsightSchema = z.object({
   answer: safeText,
   highlights: textList,
   followUps: textList,
-  evidence: z.array(assistantEvidenceSchema).nullish().transform((value) => value ?? [])
+  evidence: z.array(assistantEvidenceSchema).nullish().transform((value) => value ?? []),
+  guidance: z.object({
+    topic: safeText, title: safeText, version: safeText, explanation: safeText, why: safeText, nextAction: safeText,
+    steps: textList, commonMistakes: textList, screens: textList,
+    references: z.array(z.object({ title: safeText, url: z.string().url(), section: safeText })).optional().default([])
+  }).nullish()
 });
 
 export const assistantReportProposalSchema = z.object({

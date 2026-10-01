@@ -25,6 +25,8 @@ export const editorContextSnapshotSchema = z.object({
   label: z.string().max(160),
   readOnly: z.boolean().optional(),
   dirty: z.boolean().optional(),
+  revision: z.string().max(128).optional(),
+  field: z.string().max(64).optional(),
   data: z.record(z.string(), z.unknown()).optional()
 });
 

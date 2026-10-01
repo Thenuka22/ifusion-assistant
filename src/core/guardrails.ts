@@ -60,7 +60,7 @@ export function getRefusalMessage(
     case "range_too_long":
       return "I can help with periods of up to 31 days. Please choose a shorter range.";
     case "tool_limit_reached":
-      return "That request needs a few more steps. Please ask for one thing at a time.";
+      return "The model could not finish this request within the current allowance. Your draft is preserved; retry with the current table and pricing rule.";
     // Told apart on purpose: one is the model being unreachable, the other is it answering in a
     // shape we cannot use. They need different things done about them, so they read differently.
     case "model_unavailable":

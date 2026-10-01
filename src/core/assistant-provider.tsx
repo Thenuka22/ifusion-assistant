@@ -174,6 +174,7 @@ export type AssistantContextValue = {
   setOpen(open: boolean): void;
   ask(question: string, options?: { attachmentId?: string }): void;
   reset(): void;
+  stop(): void;
   buildContext(): AssistantContext;
   applyAction(messageId: string): void;
   undoApply(messageId: string): void;
@@ -270,7 +271,7 @@ export function AssistantProvider({
   scopeRef.current = storageKey;
 
   const fareSetupEnabled = Boolean(adapter.fareSetup) && Boolean(capabilities?.fareSetup.enabled);
-  const accepts = useMemo(() => (fareSetupEnabled ? ["fareSetup"] : []), [fareSetupEnabled]);
+  const accepts = useMemo(() => (fareSetupEnabled ? ["fareSetup", "guidance", "bulkFareV2"] : ["guidance", "bulkFareV2"]), [fareSetupEnabled]);
 
   /** Drops everything in flight: the request, the poll, and anything a late answer would touch. */
   const abandonInFlight = useCallback(() => {
@@ -289,15 +290,25 @@ export function AssistantProvider({
 
   /* capabilities */
   useEffect(() => {
-    const controller = new AbortController();
-    adapter
-      .getCapabilities(controller.signal)
-      .then(setCapabilities)
-      .catch(() => {
-        // A capabilities failure hides the widget entirely rather than showing a broken one.
-        setCapabilities(null);
+    let controller: AbortController;
+    const refresh = () => {
+      controller?.abort();
+      controller = new AbortController();
+      const signal = controller.signal;
+      void adapter.getCapabilities(signal).then(value => {
+        if (!signal.aborted) setCapabilities(value);
+      }).catch(() => {
+        if (!signal.aborted) setCapabilities(null);
       });
-    return () => controller.abort();
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener("ifusion:assistant-configuration-changed", refresh);
+    return () => {
+      controller.abort();
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("ifusion:assistant-configuration-changed", refresh);
+    };
   }, [adapter]);
 
   /* thread persistence — one thread per user and scope */
@@ -697,6 +708,13 @@ export function AssistantProvider({
 
   const consumeRestoredQuestion = useCallback(() => setRestoredQuestion(null), []);
 
+  const stop = useCallback(() => {
+    const runId = pendingRun?.runId;
+    abandonInFlight();
+    if (runId && adapter.cancelRun) void adapter.cancelRun(runId).catch(() => undefined);
+    dispatch({ type: "notice", id: nextId("notice"), text: "Stopped. Your editor draft is preserved." });
+  }, [abandonInFlight, adapter, pendingRun]);
+
   const reset = useCallback(() => {
     abandonInFlight();
     undoRef.current.clear();
@@ -724,6 +742,7 @@ export function AssistantProvider({
       setOpen,
       ask,
       reset,
+      stop,
       buildContext,
       applyAction,
       undoApply,
@@ -750,6 +769,7 @@ export function AssistantProvider({
       isOpen,
       ask,
       reset,
+      stop,
       buildContext,
       applyAction,
       undoApply,

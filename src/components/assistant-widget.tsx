@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, ImageIcon, Loader2, MessageSquarePlus, Paperclip, Send, X } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { ArrowRight, ImageIcon, Loader2, MessageSquarePlus, Paperclip, Send, X, Maximize2, Minimize2, CircleHelp, Square } from "lucide-react";
 import { ASSISTANT_MAX_QUESTION_LENGTH } from "../contracts/assistant-contracts";
 import type { FareSetupProposal } from "../contracts/fare-setup";
 import type { AssistantAdapter } from "../core/adapter";
@@ -79,6 +79,7 @@ export function AssistantWidget() {
     setOpen,
     ask,
     reset,
+    stop,
     restoredQuestion,
     consumeRestoredQuestion,
     retryAt,
@@ -88,11 +89,25 @@ export function AssistantWidget() {
     accepts
   } = assistant;
 
+  const [expanded, setExpanded] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(460);
+  const [mobile, setMobile] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const media = window.matchMedia("(max-width: 639px)");
+    const sync = () => setMobile(media.matches);
+    sync(); media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+  useEffect(() => () => { if (imagePreview) URL.revokeObjectURL(imagePreview); }, [imagePreview]);
   const [question, setQuestion] = useState("");
   const [greetingWasSeen] = useState(() => hasSeenGreeting(adapter.user.name));
   const [isGreetingDismissed, setGreetingDismissed] = useState(false);
   const [upload, setUpload] = useState<{ state: "uploading" | "failed"; message: string } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
@@ -115,7 +130,7 @@ export function AssistantWidget() {
       if (event.key === "Escape") setOpen(false);
     }
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => { window.removeEventListener("keydown", onKeyDown); launcherRef.current?.focus(); };
   }, [isOpen, setOpen]);
 
   useEffect(() => {
@@ -167,6 +182,11 @@ export function AssistantWidget() {
 
   async function onFileChosen(file: File | undefined) {
     if (!file || !adapter.uploadAttachment) return;
+    if (capabilities?.supportsImages === false) {
+      setUpload({ state: "failed", message: "This model cannot read images. Paste the fare table or switch to a vision-capable model in Settings." });
+      return;
+    }
+    setImagePreview(URL.createObjectURL(file));
     const limit = activeCapability?.attachments?.maxBytes ?? capabilities?.maxUploadBytes ?? 8 * 1024 * 1024;
     if (file.size > limit) {
       setUpload({ state: "failed", message: `That image is larger than ${Math.round(limit / 1024 / 1024)} MB.` });
@@ -232,6 +252,7 @@ export function AssistantWidget() {
         type="button"
         aria-label={isOpen ? "Close assistant" : "AI assistant"}
         aria-expanded={isOpen}
+        ref={launcherRef}
         aria-controls="assistant-panel"
         onClick={() => {
           setGreetingDismissed(true);
@@ -245,14 +266,30 @@ export function AssistantWidget() {
 
       {isOpen && (
         <>
-          <div aria-hidden="true" onClick={() => setOpen(false)} className="no-print assistant-scrim" />
+          {(expanded || mobile) && <div aria-hidden="true" onClick={() => setOpen(false)} className="no-print assistant-scrim" />}
           <aside
+            ref={panelRef}
             id="assistant-panel"
             role="dialog"
-            aria-modal="true"
+            aria-modal={expanded || mobile}
             aria-label={adapter.title ?? "iFusion Assistant"}
-            className="no-print assistant-panel"
+            className={`no-print assistant-panel${expanded ? " assistant-panel--expanded" : ""}`}
+            style={{ "--asst-panel-width": `${panelWidth}px` } as CSSProperties}
+            onKeyDown={(event) => {
+              if (!(expanded || mobile) || event.key !== "Tab") return;
+              const controls = panelRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea, a[href], [tabindex="0"]');
+              if (!controls?.length) return;
+              const first = controls[0], last = controls[controls.length - 1];
+              if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+              else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+            }}
           >
+            {!mobile && !expanded && <div role="separator" aria-label="Resize assistant panel" aria-orientation="vertical"
+              aria-valuemin={360} aria-valuemax={900} aria-valuenow={panelWidth} tabIndex={0} className="assistant-resizer"
+              onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); setPanelWidth(value => Math.min(900, Math.max(360, value + (event.key === "ArrowLeft" ? 24 : -24)))); } }}
+              onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); }}
+              onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setPanelWidth(Math.min(900, Math.max(360, window.innerWidth - event.clientX))); }}
+              onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} />}
             <header className="assistant-panel__chrome assistant-panel__header">
               <div className="assistant-panel__identity">
                 <div className="assistant-panel__avatar" aria-hidden="true">
@@ -263,6 +300,7 @@ export function AssistantWidget() {
                   <h2>{adapter.title ?? "iFusion Assistant"}</h2>
                   {/* Only when there is something to say. The dot on the avatar already says it is
                       here, so the header does not repeat itself. */}
+                  {capabilities?.model && <p className="assistant-model-label">{capabilities.provider} · {capabilities.model}</p>}
                   {contextLabel && (
                     <p className="assistant-context-chip" title="I can see this screen">
                       {contextLabel}
@@ -271,32 +309,37 @@ export function AssistantWidget() {
                 </div>
               </div>
               <div className="assistant-panel__actions">
-                {messages.length > 0 && (
+                <button type="button" aria-label={expanded ? "Collapse assistant" : "Expand assistant"} onClick={() => setExpanded(value => !value)} className="assistant-icon-button">
+                  {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                </button>
                   <button
                     type="button"
                     aria-label="Start a new conversation"
                     title="New conversation"
-                    onClick={reset}
+                    disabled={messages.length === 0 && !question && !pendingAttachment}
+                    onClick={() => { reset(); setQuestion(""); setPendingAttachment(null); setUpload(null); setImagePreview(null); }}
                     className="assistant-icon-button"
                   >
                     <MessageSquarePlus aria-hidden="true" size={16} />
                   </button>
-                )}
                 <button type="button" aria-label="Close assistant" onClick={() => setOpen(false)} className="assistant-icon-button">
                   <X aria-hidden="true" size={16} />
                 </button>
               </div>
             </header>
 
-            <div className="assistant-thread">
+            {capabilities?.guidanceAvailable && <div className="assistant-guidance-entry">
+              <button type="button" className="assistant-chip" disabled={busy} onClick={() => submit("Explain this screen and the next setup step.")}><CircleHelp size={14} aria-hidden="true" /> Explain this screen</button>
+            </div>}
+            <div className="assistant-thread" role="log" aria-live="polite" aria-label="Assistant conversation">
               {messages.length === 0 && !busy && (
-                <AssistantBubble avatarSrc={adapter.avatarSrc}>
+                <AssistantBubble avatarSrc={adapter.avatarSrc} welcome>
                   <div className="assistant-stack">
                     <div>
                       <p className="assistant-intro__title">{timeOfDayGreeting(friendlyName)}</p>
                       <p className="assistant-intro__body">
                         {contextLabel
-                          ? `I’m looking at ${contextLabel} with you. Ask me about it, or hand me some of the work.`
+                          ? "Ask about this screen, get a quick walkthrough, or let me help with the next step."
                           : adapter.subtitle ??
                             "Ask me about your routes, fares, vehicles and drivers, and I can fill in the editors for you."}
                       </p>
@@ -349,6 +392,7 @@ export function AssistantWidget() {
               </label>
               {/* Textarea and controls share one bordered box, so the composer reads as a single
                   place to type rather than a field with buttons loose beneath it. */}
+              {imagePreview && (pendingAttachment || busy || upload) && <img src={imagePreview} alt="Attached fare table preview" className="assistant-image-preview" />}
               {pendingAttachment && (
                 <p className="assistant-attachment-chip">
                   <ImageIcon aria-hidden="true" size={14} />
@@ -427,6 +471,7 @@ export function AssistantWidget() {
                   </span>
                 </div>
                 <div className="assistant-composer__right">
+                  {busy && <button type="button" onClick={stop} className="assistant-chip" aria-label="Stop response"><Square size={13} aria-hidden="true" /> Stop</button>}
                   <button
                     type="submit"
                     aria-label="Send"
@@ -489,9 +534,9 @@ function TypingBubble({ polling }: { polling: boolean }) {
   );
 }
 
-function AssistantBubble({ children, avatarSrc }: { children: ReactNode; avatarSrc: string }) {
+function AssistantBubble({ children, avatarSrc, welcome = false }: { children: ReactNode; avatarSrc: string; welcome?: boolean }) {
   return (
-    <div className="assistant-message-row">
+    <div className={`assistant-message-row${welcome ? " assistant-message-row--welcome" : ""}`}>
       <div className="assistant-message__avatar" aria-hidden="true">
         <img src={avatarSrc} alt="" width={32} height={32} className="assistant-avatar__image" />
       </div>
@@ -552,6 +597,8 @@ function MessageRow({
           followUps={result.insight.followUps}
           onFollowUp={onAsk}
           onOpenLink={adapter.onOpenLink}
+          evidence={result.insight.evidence}
+          guidance={result.insight.guidance}
         />
       )}
 

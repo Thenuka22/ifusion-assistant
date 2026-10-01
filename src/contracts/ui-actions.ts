@@ -21,7 +21,7 @@ export type UiActionSource = (typeof uiActionSources)[number];
 /** A price as the fare grid stores it: up to eight digits and two decimals, no symbol, no sign. */
 export const FARE_VALUE_PATTERN = /^\d{1,8}(\.\d{1,2})?$/;
 
-export const MAX_UI_ACTION_CELLS = 500;
+export const MAX_UI_ACTION_CELLS = 14400;
 
 /**
  * One fare cell, addressed by fare stage (`core.Fares.FromFareStageId`/`ToFareStageId`).
@@ -67,6 +67,7 @@ export const fareTriangleApplyCellsSchema = z.object({
     fareMasterId: z.number().int().positive()
   }),
   /** Merge only. The action cannot clear a cell it did not name. */
+  editorRevision: z.string().max(128).nullish(),
   mode: z.literal("merge"),
   cells: z.array(fareTriangleCellSchema).min(1).max(MAX_UI_ACTION_CELLS),
   source: z.enum(uiActionSources).catch("instruction"),
@@ -113,6 +114,7 @@ export type StageEditableFields = z.infer<typeof stageEditableFieldsSchema>;
  */
 export const routeStagesApplyRowsSchema = z.object({
   kind: z.literal("route-stages/apply-rows"),
+  editorRevision: z.string().max(128).nullish(),
   version: z.literal(1),
   target: z.object({ routeId: z.number().int().positive() }),
   mode: z.literal("merge"),

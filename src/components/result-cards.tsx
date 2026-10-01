@@ -19,6 +19,7 @@ import { getRefusalMessage } from "../core/guardrails";
 import { Markdown } from "./markdown";
 
 type Ask = (question: string) => void;
+const formatFigure = (value: number, unit: string) => unit === "currency" ? new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(value) : value.toLocaleString();
 
 export function SuggestionChips({
   suggestions,
@@ -51,17 +52,30 @@ export function InsightCard({
   highlights,
   followUps,
   onFollowUp,
-  onOpenLink
+  onOpenLink,
+  evidence = [],
+  guidance
 }: {
   answer: string;
   highlights: string[];
   followUps: string[];
   onFollowUp: Ask;
   onOpenLink?: (href: string) => void;
+  evidence?: NonNullable<AssistantQueryResponse["insight"]>["evidence"];
+  guidance?: NonNullable<AssistantQueryResponse["insight"]>["guidance"];
 }) {
   return (
     <div className="assistant-stack">
+      {guidance && <p className="assistant-result-label"><CircleHelp size={15} aria-hidden="true" /> Guidance · {guidance.title}</p>}
       <Markdown onOpenLink={onOpenLink}>{answer}</Markdown>
+      {guidance && guidance.commonMistakes.length > 0 && <details className="assistant-evidence"><summary>Things to check</summary><ul>{guidance.commonMistakes.map(item => <li key={item}>{item}</li>)}</ul></details>}
+      {evidence.length > 0 && <details className="assistant-evidence"><summary>Figures and filters ({evidence.length}) · Calculated by the reporting API</summary>
+        {evidence.map((item, index) => <div key={index}><strong>{item.reportTitle} · {item.metricLabel}</strong><p>{item.startDate.slice(0,10)} to {item.endDate.slice(0,10)} · {item.recordCount} records</p>
+          <p>Total: {formatFigure(item.total, item.unit)} · Average: {formatFigure(item.average, item.unit)}</p>
+          {item.appliedFilters.map(filter => <p key={filter.key}>{filter.key}: {filter.labels.join(", ")}</p>)}
+          {item.groups.length > 0 && <table><thead><tr><th>Group</th><th>Total</th><th>Records</th></tr></thead><tbody>{item.groups.map(group => <tr key={group.key}><td>{group.key}</td><td>{formatFigure(group.total, item.unit)}</td><td>{group.recordCount}</td></tr>)}</tbody></table>}
+        </div>)}
+      </details>}
       {highlights.length > 0 && (
         <ul className="assistant-highlights">
           {highlights.map((highlight) => (

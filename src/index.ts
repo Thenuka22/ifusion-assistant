@@ -124,3 +124,4 @@ export {
   ThinkingLine,
   UiActionCard
 } from "./components/result-cards";
+export { editorDraftRevision } from "./core/editor-revision";
