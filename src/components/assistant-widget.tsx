@@ -162,13 +162,7 @@ export function AssistantWidget() {
   // Anywhere else a photo can still start a fare setup, when the host can review one.
   const canUpload = Boolean(adapter.uploadAttachment) && (editorTakesImage || fareSetupEnabled);
 
-  const starters = (
-    activeCapability?.suggestions?.length
-      ? activeCapability.suggestions
-      : sectionCapability?.suggestions?.length
-        ? sectionCapability.suggestions
-        : capabilities?.examples ?? []
-  ).slice(0, 4);
+  const starters = screenSuggestions(assistant).slice(0, 4);
 
   const contextLabel = activeCapability?.getSnapshot().label || assistant.buildContext().moduleTitle || "";
 
@@ -329,7 +323,7 @@ export function AssistantWidget() {
             </header>
 
             {capabilities?.guidanceAvailable && <div className="assistant-guidance-entry">
-              <button type="button" className="assistant-chip" disabled={busy} onClick={() => submit("Explain this screen and the next setup step.")}><CircleHelp size={14} aria-hidden="true" /> Explain this screen</button>
+              <button type="button" className="assistant-chip" disabled={busy} onClick={() => { if (!busy && !waiting) ask("Explain this screen and the next setup step.", { intent: "explainScreen" }); }}><CircleHelp size={14} aria-hidden="true" /> Explain this screen</button>
             </div>}
             <div className="assistant-thread" role="log" aria-live="polite" aria-label="Assistant conversation">
               {messages.length === 0 && !busy && (
@@ -558,7 +552,7 @@ function MessageRow({
   onAsk: (question: string) => void;
 }) {
   const assistant = useAssistant();
-  const { adapter, activeCapability, capabilities } = assistant;
+  const { adapter, activeCapability } = assistant;
 
   if (message.role === "user") {
     return (
@@ -664,15 +658,26 @@ function MessageRow({
           detail={result.refusal.detail}
           question={previousQuestion}
           canEdit={Boolean(activeCapability)}
-          suggestions={(capabilities?.examples ?? []).slice(0, 2)}
+          suggestions={screenSuggestions(assistant).slice(0, 2)}
           onPick={onAsk}
           retryAfterSeconds={result.refusal.retryAfterSeconds}
         />
       )}
 
-      {result.resultType === "queued" && <QueuedCard />}
+      {result.resultType === "queued" && <QueuedCard onCancel={assistant.status === "polling" ? assistant.stop : undefined} />}
     </AssistantBubble>
   );
+}
+
+/**
+ * What can be asked on the screen the user is on: the open editor's own suggestions, then the
+ * screen's, and only then the service's general examples.
+ */
+function screenSuggestions(assistant: ReturnType<typeof useAssistant>): string[] {
+  const { activeCapability, sectionCapability, capabilities } = assistant;
+  if (activeCapability?.suggestions?.length) return activeCapability.suggestions;
+  if (sectionCapability?.suggestions?.length) return sectionCapability.suggestions;
+  return capabilities?.examples ?? [];
 }
 
 /** Why the undo on a fill no longer applies, or undefined while it still does. */

@@ -97,6 +97,8 @@ export {
 
 export {
   useAssistantEditor,
+  useAssistantView,
+  type AssistantView,
   type EditorCapability
 } from "./core/capability-registry";
 

@@ -161,6 +161,26 @@ Both frontends currently consume synchronized `packages/assistant` snapshots wit
 when releasing, then run `pnpm install` in each host to refresh the file dependency and lockfile.
 The host apps must compile the package through `transpilePackages`.
 
+## Views and explain-this-screen (0.7)
+
+A screen says which part of it is showing, even when there is nothing to edit:
+
+```tsx
+useAssistantView(fareMasterId ? "matrix" : "fare-table-list", {
+  "Ticket product": "Adult single",
+  "Prices set": "3 of 741",
+});
+```
+
+The view and at most twelve short display facts travel as `context.view` and `context.viewFacts`
+(never ids or grids). "Explain this screen" sends `intent: "explainScreen"`; the service answers
+from its reviewed text for that screen and view, worded by the model with no tools. Editor
+snapshots should send priced draft cells only: a missing cell is an empty one.
+
+Refusals with `tool_limit_reached` or `malformed_model_output` keep the question and offer Try
+again. Refusal suggestions come from the open editor, then the screen, then the general examples.
+A queued answer is polled for at most 90 seconds. Fill refusals use `editor_precondition`.
+
 Run `node qa/smoke.mjs` with Ticketing installed at the neighboring workspace path, or pass its
 absolute directory as the first argument. The fixture uses the actual panel and mocked data;
 it checks desktop/mobile sizing, keyboard controls, guidance and serious axe violations.

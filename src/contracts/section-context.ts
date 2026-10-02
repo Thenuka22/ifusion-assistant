@@ -16,8 +16,7 @@ export const ASSISTANT_CONTEXT_VERSION = 1;
  * What an open editor tells the assistant about itself.
  *
  * `data` is the grounding the server needs to answer and to expand a fill instruction — the stage
- * list, the ids in play, whether the screen is read-only. It is deliberately bounded: identifiers
- * and names, never whole grids of values.
+ * list, the ids in play, whether the screen is read-only, and the draft cells a fill merges into.
  */
 export const editorContextSnapshotSchema = z.object({
   capabilityId: z.string().min(1).max(64),
@@ -52,7 +51,11 @@ export const assistantContextSchema = z.object({
   /** Ids of what is open, e.g. { routeId: 42, fareMasterId: 981 }. */
   selection: z.record(z.string(), z.union([z.number(), z.string()])).optional(),
   editor: editorContextSnapshotSchema.optional(),
-  timeZone: z.string().max(64).optional()
+  timeZone: z.string().max(64).optional(),
+  /** Which part of the screen is showing, e.g. "list" or "matrix". */
+  view: z.string().max(64).optional(),
+  /** A few display facts about that view, e.g. { "Prices set": "3 of 741" }. Never ids or grids. */
+  viewFacts: z.record(z.string().max(40), z.string().max(120)).optional()
 });
 
 export type AssistantContext = z.infer<typeof assistantContextSchema>;

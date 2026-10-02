@@ -172,7 +172,7 @@ export type AssistantContextValue = {
   status: "idle" | "asking" | "polling";
   isOpen: boolean;
   setOpen(open: boolean): void;
-  ask(question: string, options?: { attachmentId?: string }): void;
+  ask(question: string, options?: { attachmentId?: string; intent?: string }): void;
   reset(): void;
   stop(): void;
   buildContext(): AssistantContext;
@@ -237,7 +237,13 @@ export function AssistantProvider({
   const [capabilities, setCapabilities] = useState<AssistantCapabilities | null>(null);
   const [status, setStatus] = useState<"idle" | "asking" | "polling">("idle");
   const [isOpen, setOpen] = useState(false);
-  const [pendingRun, setPendingRun] = useState<{ messageId: string; runId: string; delay: number } | null>(null);
+  const [pendingRun, setPendingRun] = useState<{
+    messageId: string;
+    runId: string;
+    delay: number;
+    startedAt: number;
+    question: string;
+  } | null>(null);
   const [restoredQuestion, setRestoredQuestion] = useState<{ text: string; nonce: number } | null>(null);
   const [retryAt, setRetryAt] = useState<number | null>(null);
   const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null);
@@ -362,6 +368,8 @@ export function AssistantProvider({
       ...(base.selection ?? {}),
       ...(capability?.getSelection?.() ?? {})
     };
+    const view = registry.getView();
+    const viewFacts = view?.facts ? boundFacts(view.facts) : undefined;
 
     return {
       version: ASSISTANT_CONTEXT_VERSION,
@@ -373,7 +381,9 @@ export function AssistantProvider({
       ...(base.zoneId ? { zoneId: base.zoneId } : {}),
       ...(Object.keys(selection).length > 0 ? { selection } : {}),
       ...(snapshot ? { editor: snapshot } : {}),
-      ...(getBrowserTimeZone() ? { timeZone: getBrowserTimeZone() } : {})
+      ...(getBrowserTimeZone() ? { timeZone: getBrowserTimeZone() } : {}),
+      ...(view?.view ? { view: view.view.slice(0, 64) } : {}),
+      ...(viewFacts && Object.keys(viewFacts).length > 0 ? { viewFacts } : {})
     };
   }, [registry]);
 
@@ -447,7 +457,7 @@ export function AssistantProvider({
   }, []);
 
   const ask = useCallback(
-    (question: string, options?: { attachmentId?: string }) => {
+    (question: string, options?: { attachmentId?: string; intent?: string }) => {
       const attachmentId = options?.attachmentId ?? pendingAttachment?.attachmentId;
       const trimmed = question.trim() || (attachmentId ? "Read this fare table." : "");
       if (trimmed.length < 2 || inFlightRef.current || status !== "idle") return;
@@ -468,7 +478,8 @@ export function AssistantProvider({
         context: buildContext(),
         ...(thread.sessionId ? { sessionId: thread.sessionId } : {}),
         ...(attachmentId ? { attachmentId } : {}),
-        ...(accepts.length > 0 ? { accepts } : {})
+        ...(accepts.length > 0 ? { accepts } : {}),
+        ...(options?.intent ? { intent: options.intent } : {})
       };
 
       const messageId = nextId("a");
@@ -485,7 +496,9 @@ export function AssistantProvider({
             setPendingRun({
               messageId,
               runId: response.runId,
-              delay: Math.max(1, response.queued?.retryAfterSeconds ?? 2) * 1000
+              delay: Math.max(1, response.queued?.retryAfterSeconds ?? 2) * 1000,
+              startedAt: Date.now(),
+              question: trimmed
             });
             setStatus("polling");
             return;
@@ -532,6 +545,20 @@ export function AssistantProvider({
         .then((response) => {
           if (stale()) return;
           if (response.resultType === "queued") {
+            // Waiting is bounded: past the limit the run is cancelled and the question handed back.
+            if (Date.now() - pendingRun.startedAt > MAX_POLL_MS) {
+              if (adapter.cancelRun) void adapter.cancelRun(pendingRun.runId).catch(() => undefined);
+              dispatch({
+                type: "error",
+                id: nextId("e"),
+                text: "That is taking much longer than it should, so I’ve stopped waiting. Your editor draft is preserved.",
+                retry: pendingRun.question
+              });
+              setRestoredQuestion({ text: pendingRun.question, nonce: Date.now() });
+              setPendingRun(null);
+              setStatus("idle");
+              return;
+            }
             setPendingRun({ ...pendingRun });
             return;
           }
@@ -544,7 +571,8 @@ export function AssistantProvider({
           dispatch({
             type: "error",
             id: nextId("e"),
-            text: "I couldn’t collect the completed answer right now. Please try again shortly."
+            text: "I couldn’t collect the completed answer right now. Please try again shortly.",
+            retry: pendingRun.question
           });
           setPendingRun(null);
           setStatus("idle");
@@ -795,4 +823,27 @@ export function AssistantProvider({
 }
 
 /** Refusals that mean "not now" rather than "no": what was typed is kept for another go. */
-const TRANSIENT_REFUSALS = new Set(["model_rate_limited", "model_timeout", "model_unavailable", "input_too_long"]);
+const TRANSIENT_REFUSALS = new Set([
+  "model_rate_limited",
+  "model_timeout",
+  "model_unavailable",
+  "input_too_long",
+  // The model ran out of steps or replied in a form that could not be read: the same question
+  // usually works on a second go, so it is kept rather than lost.
+  "tool_limit_reached",
+  "malformed_model_output"
+]);
+
+/** How long a queued answer is waited for before the widget gives up and offers to ask again. */
+const MAX_POLL_MS = 90_000;
+
+/** At most a dozen short display facts; anything longer is cut rather than refused by the schema. */
+function boundFacts(facts: Record<string, string>): Record<string, string> {
+  const bounded: Record<string, string> = {};
+  for (const [key, value] of Object.entries(facts).slice(0, 12)) {
+    const name = key.trim().slice(0, 40);
+    const text = String(value ?? "").trim().slice(0, 120);
+    if (name && text) bounded[name] = text;
+  }
+  return bounded;
+}

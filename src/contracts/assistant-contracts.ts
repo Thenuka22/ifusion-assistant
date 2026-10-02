@@ -35,7 +35,9 @@ export const assistantAskRequestSchema = z.object({
    * Optional result types this client can render. Absent, the server keeps to the original set, so
    * an older widget never receives something it cannot parse.
    */
-  accepts: z.array(z.string().max(32)).max(8).optional()
+  accepts: z.array(z.string().max(32)).max(8).optional(),
+  /** What a widget button asked for, e.g. "explainScreen"; absent for a typed question. */
+  intent: z.string().max(32).optional()
 });
 
 export type AssistantAskRequest = z.infer<typeof assistantAskRequestSchema>;

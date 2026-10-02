@@ -122,22 +122,33 @@ export function RefusalCard({
   detail?: string;
   question: string;
   canEdit: boolean;
+  /** Suggestions for the screen the user is on, offered when the question was outside what it does. */
   suggestions: string[];
   onPick: Ask;
   retryAfterSeconds?: number;
 }) {
+  // "Not now" rather than "no": the same question, asked again, usually works.
+  const retryable = RETRYABLE_REFUSALS.has(reason) && question.trim().length >= 2;
   return (
     <div className="assistant-stack">
       <p className="assistant-line">
         <ShieldCheck aria-hidden="true" size={16} className="assistant-line__icon" />
         <span>{detail?.trim() ? detail : getRefusalMessage(reason, question, { canEdit, retryAfterSeconds })}</span>
       </p>
-      {reason === "out_of_scope" && (
-        <SuggestionChips suggestions={suggestions} onPick={onPick} label="Things I can help with" />
+      {retryable && (
+        <button type="button" onClick={() => onPick(question)} className="assistant-text-action">
+          Try again
+          <ArrowRight aria-hidden="true" size={14} />
+        </button>
+      )}
+      {(reason === "out_of_scope" || reason === "out_of_section") && suggestions.length > 0 && (
+        <SuggestionChips suggestions={suggestions} onPick={onPick} label="Things I can help with here" />
       )}
     </div>
   );
 }
+
+const RETRYABLE_REFUSALS = new Set(["tool_limit_reached", "malformed_model_output", "model_timeout", "model_unavailable"]);
 
 export function ThinkingLine({ text = "Looking that up…" }: { text?: string }) {
   return (
