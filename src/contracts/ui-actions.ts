@@ -11,7 +11,7 @@ import { z } from "zod";
  * directly: the model names an intent and the server turns it into cells.
  */
 
-export const uiActionKinds = ["fare-triangle/apply-cells", "route-stages/apply-rows", "route-stages/apply-fare-groups"] as const;
+export const uiActionKinds = ["fare-triangle/apply-cells", "route-stages/apply-rows", "route-stages/apply-fare-groups", "flat-fares/prepare"] as const;
 export type UiActionKind = (typeof uiActionKinds)[number];
 
 /** Where a filled value came from, which decides how prominently the UI asks for a review. */
@@ -172,10 +172,34 @@ export const routeStagesApplyFareGroupsSchema = z.object({
 
 export type RouteStagesApplyFareGroups = z.infer<typeof routeStagesApplyFareGroupsSchema>;
 
+/**
+ * A flat fare — one price for any journey — filled into the fare editor's Flat fares form. The
+ * form is only filled in: the person checks it and saves it, and the API re-checks on save.
+ */
+export const flatFarePrepareSchema = z.object({
+  kind: z.literal("flat-fares/prepare"),
+  editorRevision: z.string().max(128).nullish(),
+  version: z.literal(1),
+  target: z.object({ routeId: z.number().int().positive() }),
+  mode: z.literal("merge"),
+  flatFare: z.object({
+    ticketClassId: z.number().int().positive(),
+    ticketClass: z.string().max(200).nullish(),
+    amount: z.string().regex(FARE_VALUE_PATTERN),
+    validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    routeIds: z.array(z.number().int().positive()).min(1).max(200)
+  }),
+  source: z.enum(uiActionSources).catch("instruction"),
+  warnings: z.array(z.string()).nullish().transform((value) => value ?? [])
+});
+
+export type FlatFarePrepare = z.infer<typeof flatFarePrepareSchema>;
+
 export const uiActionBodySchema = z.discriminatedUnion("kind", [
   fareTriangleApplyCellsSchema,
   routeStagesApplyRowsSchema,
-  routeStagesApplyFareGroupsSchema
+  routeStagesApplyFareGroupsSchema,
+  flatFarePrepareSchema
 ]);
 
 export type UiActionBody = z.infer<typeof uiActionBodySchema>;

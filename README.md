@@ -197,6 +197,11 @@ BODS import item under review — with up to twenty lines of what the screen sho
 service explains those lines (they are never treated as instructions). A view with a subject wins
 over the screen beneath it.
 
+## Flat fares (0.9)
+
+`flat-fares/prepare` carries a flat fare (ticket class, amount, start date, routes) for the fare
+editor's Flat fares form to open filled in. The editor never saves it on the assistant's behalf.
+
 Run `node qa/smoke.mjs` with Ticketing installed at the neighboring workspace path, or pass its
 absolute directory as the first argument. The fixture uses the actual panel and mocked data;
 it checks desktop/mobile sizing, keyboard controls, guidance and serious axe violations.
