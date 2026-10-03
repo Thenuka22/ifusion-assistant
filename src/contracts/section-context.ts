@@ -31,6 +31,17 @@ export const editorContextSnapshotSchema = z.object({
 
 export type EditorContextSnapshot = z.infer<typeof editorContextSnapshotSchema>;
 
+export const assistantSubjectSchema = z.object({
+  /** What sort of thing it is, e.g. "bods-import-item". */
+  kind: z.string().min(1).max(40),
+  title: z.string().max(200),
+  /** Its state as the screen labels it, e.g. "Waiting for a timetable". */
+  state: z.string().max(80).optional(),
+  lines: z.array(z.string().max(400)).max(20)
+});
+
+export type AssistantSubject = z.infer<typeof assistantSubjectSchema>;
+
 /**
  * Where the user is, sent with every question.
  *
@@ -55,7 +66,12 @@ export const assistantContextSchema = z.object({
   /** Which part of the screen is showing, e.g. "list" or "matrix". */
   view: z.string().max(64).optional(),
   /** A few display facts about that view, e.g. { "Prices set": "3 of 741" }. Never ids or grids. */
-  viewFacts: z.record(z.string().max(40), z.string().max(120)).optional()
+  viewFacts: z.record(z.string().max(40), z.string().max(120)).optional(),
+  /**
+   * The one thing the user is looking at in that view, such as an import item open for review,
+   * with the lines the screen shows about it. Display text to be explained, never instructions.
+   */
+  subject: assistantSubjectSchema.optional()
 });
 
 export type AssistantContext = z.infer<typeof assistantContextSchema>;

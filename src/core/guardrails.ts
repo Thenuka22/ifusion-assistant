@@ -59,24 +59,26 @@ export function getRefusalMessage(
   switch (reason) {
     case "range_too_long":
       return "I can help with periods of up to 31 days. Please choose a shorter range.";
+    // None of these name a vendor or a model: the person asking is talking to the assistant, and
+    // which service is behind it is a setting for administrators.
     case "tool_limit_reached":
-      return "The model could not finish this request within the current allowance. Your draft is preserved; retry with the current table and pricing rule.";
-    // Told apart on purpose: one is the model being unreachable, the other is it answering in a
+      return "I couldn’t finish that one in time. Your draft is preserved; try again, perhaps naming the table or rule you mean.";
+    // Told apart on purpose: one is the service being unreachable, the other is it answering in a
     // shape we cannot use. They need different things done about them, so they read differently.
     case "model_unavailable":
-      return "I can’t reach the language model at the moment. It’s usually brief; please try again shortly.";
+      return "I can’t think straight at the moment. It’s usually brief; please try again shortly.";
     case "model_rate_limited":
       return options?.retryAfterSeconds
-        ? `The language model is busy or its quota is used up. Please try again in ${formatWait(options.retryAfterSeconds)}; your message is still in the box.`
-        : "The language model is busy or its quota is used up. Please try again shortly; your message is still in the box.";
+        ? `I’m at my limit just now. Please try again in ${formatWait(options.retryAfterSeconds)}; your message is still in the box.`
+        : "I’m at my limit just now. Please try again shortly; your message is still in the box.";
     case "model_timeout":
-      return "The language model took too long to answer. Your message is still in the box, so you can send it again.";
+      return "That took me too long to answer. Your message is still in the box, so you can send it again.";
     case "input_too_long":
       return "That message is longer than I can take in one go. Shorten it, or split a large table across two messages.";
     case "malformed_model_output":
-      return "The model replied in a form I couldn’t read. Try rephrasing, and if it keeps happening the configured model may not support this.";
+      return "I got muddled putting that answer together. Try asking again, perhaps in different words.";
     case "agent_disabled":
-      return "The assistant isn’t available right now.";
+      return "I’m not available right now.";
     case "out_of_section":
       return "I can only do that on the screen it belongs to. Open it and ask me again.";
     default:
@@ -95,10 +97,10 @@ export function formatWait(seconds: number) {
 export function getFriendlyRequestError(error: unknown, status?: number) {
   const code = status ?? readStatus(error);
   if (code === 401) return "Your session has expired. Please sign in again.";
-  if (code === 403) return "The assistant isn’t available for your account right now.";
-  if (code === 429) return "You’ve reached the current assistant limit. Please try again later.";
+  if (code === 403) return "I’m not available for your account right now.";
+  if (code === 429) return "You’ve asked me a lot this hour. Please try again a little later.";
   if (code === 413) return "That message is too large to send. Shorten it, or split it across two messages.";
-  if (code === 504) return "The assistant took too long to answer. Your message is still in the box; please try again.";
+  if (code === 504) return "That took me too long to answer. Your message is still in the box; please try again.";
   return "I couldn’t complete that request right now. Please try again shortly.";
 }
 

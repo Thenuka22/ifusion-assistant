@@ -22,7 +22,9 @@ try {
   await page.getByRole("button", { name: "Explain this screen", exact: true }).click();
   await page.getByText("Guidance · Stop membership").waitFor();
   await page.waitForTimeout(350);
-  const panel = page.getByRole("dialog", { name: "iFusion Assistant" });
+  const panel = page.getByRole("dialog", { name: "Lora" });
+  // The provider and model are an administrator's setting and never appear in the panel.
+  if (await panel.getByText(/OpenRouter|deepseek/).count()) throw new Error("The panel shows the provider or model.");
   const before = await panel.boundingBox();
   if (before.width !== 460) throw new Error(`Unexpected desktop panel width: ${before.width}`);
   const resize = page.getByRole("separator", { name: "Resize assistant panel" });

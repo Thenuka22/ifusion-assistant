@@ -53,10 +53,12 @@ export {
 export {
   ASSISTANT_CONTEXT_VERSION,
   assistantContextSchema,
+  assistantSubjectSchema,
   editorContextSnapshotSchema,
   getBrowserTimeZone,
   type AssistantApp,
   type AssistantContext,
+  type AssistantSubject,
   type EditorContextSnapshot
 } from "./contracts/section-context";
 
@@ -66,6 +68,7 @@ export {
   fareTriangleApplyCellsSchema,
   fareTriangleCellSchema,
   routeStagesApplyRowsSchema,
+  routeStagesApplyFareGroupsSchema,
   uiActionBodySchema,
   uiActionKinds,
   uiActionSchema,
@@ -74,6 +77,7 @@ export {
   type FareTriangleApplyCells,
   type FareTriangleCell,
   type RouteStagesApplyRows,
+  type RouteStagesApplyFareGroups,
   type StageEditableFields,
   type UiAction,
   type UiActionKind,

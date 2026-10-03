@@ -11,7 +11,7 @@ import { z } from "zod";
  * directly: the model names an intent and the server turns it into cells.
  */
 
-export const uiActionKinds = ["fare-triangle/apply-cells", "route-stages/apply-rows"] as const;
+export const uiActionKinds = ["fare-triangle/apply-cells", "route-stages/apply-rows", "route-stages/apply-fare-groups"] as const;
 export type UiActionKind = (typeof uiActionKinds)[number];
 
 /** Where a filled value came from, which decides how prominently the UI asks for a review. */
@@ -139,9 +139,43 @@ export const routeStagesApplyRowsSchema = z.object({
 
 export type RouteStagesApplyRows = z.infer<typeof routeStagesApplyRowsSchema>;
 
+/**
+ * Stops put into fare groups, and any groups that have to be made for them.
+ *
+ * Stops and existing groups are named by the editor's own draft keys, which it sent with the
+ * question, so unsaved ones can be addressed. A new group carries a key of the server's own
+ * (`ai-new-1`…) that the editor swaps for a draft of its own. Nothing here removes a group or a stop.
+ */
+export const routeStagesApplyFareGroupsSchema = z.object({
+  kind: z.literal("route-stages/apply-fare-groups"),
+  editorRevision: z.string().max(128).nullish(),
+  version: z.literal(1),
+  target: z.object({ routeId: z.number().int().positive() }),
+  mode: z.literal("merge"),
+  groups: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(64),
+        name: z.string().min(1).max(100),
+        number: z.number().int().min(0).max(999).nullish(),
+        isNew: z.boolean()
+      })
+    )
+    .max(200),
+  assignments: z
+    .array(z.object({ stopKey: z.string().min(1).max(64), groupKey: z.string().min(1).max(64) }))
+    .min(1)
+    .max(2000),
+  source: z.enum(uiActionSources).catch("instruction"),
+  warnings: z.array(z.string()).nullish().transform((value) => value ?? [])
+});
+
+export type RouteStagesApplyFareGroups = z.infer<typeof routeStagesApplyFareGroupsSchema>;
+
 export const uiActionBodySchema = z.discriminatedUnion("kind", [
   fareTriangleApplyCellsSchema,
-  routeStagesApplyRowsSchema
+  routeStagesApplyRowsSchema,
+  routeStagesApplyFareGroupsSchema
 ]);
 
 export type UiActionBody = z.infer<typeof uiActionBodySchema>;

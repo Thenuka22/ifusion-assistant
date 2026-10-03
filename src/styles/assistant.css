@@ -27,6 +27,16 @@
 
   /* A hairline that reads on either ground: barely there on white, visible on dark. */
   --asst-hairline: color-mix(in srgb, var(--asst-border-color) 70%, transparent);
+
+  /* Lora's own colours: an indigo for her and for what you send her, and the header's glow. Hosts
+     may override either; white text on the brand colour stays above 4.5:1. */
+  --asst-brand-color: var(--asst-brand, #4f46e5);
+  --asst-brand-strong-color: var(--asst-brand-strong, #4338ca);
+  --asst-header-background: var(
+    --asst-header-gradient,
+    radial-gradient(130% 150% at 100% 0%, rgba(251, 164, 92, 0.9) 0%, rgba(236, 72, 153, 0.75) 32%, transparent 62%),
+    linear-gradient(135deg, #312e81 0%, #4338ca 50%, #6d28d9 100%)
+  );
 }
 
 .assistant-sr-only {
@@ -1121,7 +1131,6 @@
 }
 .assistant-resizer { position: absolute; left: -5px; top: 0; bottom: 0; width: 10px; cursor: ew-resize; touch-action: none; }
 .assistant-resizer:focus-visible { outline: 2px solid var(--asst-accent-color); }
-.assistant-model-label { font-size: 11px; color: var(--asst-fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 3px 0; max-width: 235px; }
 .assistant-guidance-entry { padding: 10px 16px; background: var(--asst-surface); border-bottom: 1px solid var(--asst-hairline); }
 .assistant-guidance-entry button, .assistant-result-label { display: flex; align-items: center; gap: 6px; }
 .assistant-result-label { font-size: 12px; color: var(--asst-fg-subtle); margin: 0; }
@@ -1130,3 +1139,158 @@
 .assistant-evidence table { width: 100%; text-align: left; border-collapse: collapse; }
 .assistant-evidence th, .assistant-evidence td { padding: 5px; border-bottom: 1px solid var(--asst-hairline); }
 .assistant-image-preview { max-width: 100%; height: 96px; object-fit: contain; border-radius: 8px; margin-bottom: 8px; }
+
+/* ------------------------------------------------------------- Lora (0.8)
+
+   A coloured header with her face, name and line; messages labelled with who said them and when;
+   a round send button. Everything else keeps the host's tokens, so it still sits in either app. */
+
+.assistant-launcher {
+  background: linear-gradient(140deg, var(--asst-brand-color), #db2777 70%, #f59e0b);
+}
+
+/* Scoped to the panel so a host's own `header` styles cannot paint over it. */
+.assistant-panel .assistant-panel__header--hero {
+  position: relative;
+  align-items: flex-start;
+  padding: 1.15rem 1.15rem 1.25rem;
+  border-bottom: 0;
+  background: var(--asst-header-background);
+  color: #ffffff;
+}
+
+.assistant-panel__header--hero .assistant-panel__identity {
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.assistant-panel__header--hero .assistant-panel__avatar {
+  width: 3rem;
+  height: 3rem;
+  padding: 2px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px -8px rgba(17, 12, 46, 0.6);
+}
+
+.assistant-panel__header--hero .assistant-avatar__presence { border-color: #ffffff; }
+
+.assistant-panel__header--hero .assistant-panel__titles { gap: 0.1rem; padding-top: 0.1rem; }
+
+.assistant-panel__header--hero .assistant-panel__titles h2 {
+  color: #ffffff;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.assistant-panel__tagline {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.8125rem;
+  line-height: 1.2rem;
+}
+
+.assistant-panel__header--hero .assistant-context-chip {
+  width: fit-content;
+  margin-top: 0.45rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.assistant-panel__header--hero .assistant-panel__actions .assistant-icon-button {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.assistant-panel__header--hero .assistant-panel__actions .assistant-icon-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.assistant-panel__header--hero .assistant-icon-button:focus-visible { box-shadow: 0 0 0 2px #ffffff; }
+
+.assistant-panel__header--hero .assistant-icon-button:disabled { opacity: 0.5; }
+
+.assistant-panel { background: var(--asst-surface); }
+
+.assistant-message__body {
+  display: flex;
+  min-width: 0;
+  max-width: calc(100% - 2.35rem);
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.assistant-message-row--welcome .assistant-message__body { max-width: 100%; }
+
+.assistant-message__name {
+  margin: 0;
+  color: var(--asst-fg);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.assistant-message__body .assistant-message__bubble {
+  max-width: 100%;
+  border: 0;
+  border-radius: 14px;
+  border-top-left-radius: 4px;
+  background: color-mix(in srgb, var(--asst-brand-color) 7%, var(--asst-surface));
+  color: var(--asst-fg);
+}
+
+.assistant-message-row--welcome .assistant-message__body .assistant-message__bubble {
+  border: 1px solid var(--asst-hairline);
+  border-radius: 18px;
+  background: var(--asst-surface);
+}
+
+.assistant-message__time {
+  color: var(--asst-fg-subtle);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.assistant-message__body .assistant-message__time { align-self: flex-end; }
+
+.assistant-user-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.assistant-user-row .assistant-user-message {
+  margin: 0;
+  border-radius: 14px;
+  border-bottom-right-radius: 4px;
+  background: var(--asst-brand-color);
+  color: #ffffff;
+}
+
+.assistant-typing__dots span { background: color-mix(in srgb, var(--asst-brand-color) 60%, var(--asst-surface)); }
+
+.assistant-composer { border-top: 1px solid var(--asst-hairline); }
+
+.assistant-composer__box { border-radius: 22px; }
+
+.assistant-composer__box:focus-within {
+  border-color: var(--asst-brand-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--asst-brand-color) 22%, transparent);
+}
+
+.assistant-send {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 999px;
+  background: var(--asst-brand-color);
+  color: #ffffff;
+}
+
+.assistant-send:hover:not(:disabled) { background: var(--asst-brand-strong-color); }
+
+.assistant-send:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--asst-brand-color) 35%, transparent); }

@@ -31,7 +31,10 @@ export interface AssistantAdapter {
   scopeKey?: string;
   /** Path to the avatar image served by the host app. */
   avatarSrc: string;
+  /** The assistant's name, shown in the header and on its messages. Defaults to "Lora". */
   title?: string;
+  /** A short line under the name, e.g. "by iFusion Intelligence". */
+  tagline?: string;
   subtitle?: string;
   placeholder?: string;
   greetingAction?: string;

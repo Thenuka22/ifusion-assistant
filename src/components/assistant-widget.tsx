@@ -21,6 +21,9 @@ import {
 
 const GREETING_KEY = "ifusion-assistant-greeting-seen";
 
+/** What the assistant is called when the host does not say. */
+const DEFAULT_NAME = "Lora";
+
 function hasSeenGreeting(userName: string) {
   if (typeof window === "undefined") return false;
   try {
@@ -88,6 +91,7 @@ export function AssistantWidget() {
     fareSetupEnabled,
     accepts
   } = assistant;
+  const name = adapter.title ?? DEFAULT_NAME;
 
   const [expanded, setExpanded] = useState(false);
   const [panelWidth, setPanelWidth] = useState(460);
@@ -177,7 +181,7 @@ export function AssistantWidget() {
   async function onFileChosen(file: File | undefined) {
     if (!file || !adapter.uploadAttachment) return;
     if (capabilities?.supportsImages === false) {
-      setUpload({ state: "failed", message: "This model cannot read images. Paste the fare table or switch to a vision-capable model in Settings." });
+      setUpload({ state: "failed", message: `${name} can't read images just now. Paste the fare table as text instead, or ask an administrator to turn on image reading under Settings → AI assistant.` });
       return;
     }
     setImagePreview(URL.createObjectURL(file));
@@ -215,7 +219,7 @@ export function AssistantWidget() {
   return (
     <>
       {!greetingWasSeen && !isGreetingDismissed && !isOpen && (
-        <section role="status" aria-label="Welcome from iFusion Assistant" className="no-print assistant-greeting">
+        <section role="status" aria-label={`Welcome from ${name}`} className="no-print assistant-greeting">
           <button
             type="button"
             aria-label="Dismiss assistant welcome"
@@ -227,7 +231,7 @@ export function AssistantWidget() {
           <p className="assistant-greeting__title">
             Hi <span aria-hidden="true">{"\u{1F44B}"}</span> {friendlyName}!
           </p>
-          <p className="assistant-greeting__body">I&apos;m your {adapter.title ?? "iFusion Assistant"}.</p>
+          <p className="assistant-greeting__body">I&apos;m {name}{adapter.tagline ? `, ${adapter.tagline}` : ""}.</p>
           <button
             type="button"
             onClick={() => {
@@ -266,7 +270,7 @@ export function AssistantWidget() {
             id="assistant-panel"
             role="dialog"
             aria-modal={expanded || mobile}
-            aria-label={adapter.title ?? "iFusion Assistant"}
+            aria-label={name}
             className={`no-print assistant-panel${expanded ? " assistant-panel--expanded" : ""}`}
             style={{ "--asst-panel-width": `${panelWidth}px` } as CSSProperties}
             onKeyDown={(event) => {
@@ -284,17 +288,17 @@ export function AssistantWidget() {
               onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); }}
               onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setPanelWidth(Math.min(900, Math.max(360, window.innerWidth - event.clientX))); }}
               onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} />}
-            <header className="assistant-panel__chrome assistant-panel__header">
+            {/* Who it is and what it can see. Never which vendor or model is behind it: that is a
+                setting for administrators, not something the person asking needs to know. */}
+            <header className="assistant-panel__header assistant-panel__header--hero">
               <div className="assistant-panel__identity">
                 <div className="assistant-panel__avatar" aria-hidden="true">
-                  <img src={adapter.avatarSrc} alt="" width={44} height={44} className="assistant-avatar__image" />
+                  <img src={adapter.avatarSrc} alt="" width={48} height={48} className="assistant-avatar__image" />
                   <span className="assistant-avatar__presence" />
                 </div>
                 <div className="assistant-panel__titles">
-                  <h2>{adapter.title ?? "iFusion Assistant"}</h2>
-                  {/* Only when there is something to say. The dot on the avatar already says it is
-                      here, so the header does not repeat itself. */}
-                  {capabilities?.model && <p className="assistant-model-label">{capabilities.provider} · {capabilities.model}</p>}
+                  <h2>{name}</h2>
+                  {adapter.tagline && <p className="assistant-panel__tagline">{adapter.tagline}</p>}
                   {contextLabel && (
                     <p className="assistant-context-chip" title="I can see this screen">
                       {contextLabel}
@@ -515,7 +519,7 @@ function TypingBubble({ polling }: { polling: boolean }) {
 
   return (
     <div className="assistant-typing" role="status">
-      <span className="assistant-sr-only">The assistant is thinking</span>
+      <span className="assistant-sr-only">Thinking</span>
       <span aria-hidden="true" className="assistant-typing__dots">
         <span />
         <span />
@@ -528,15 +532,28 @@ function TypingBubble({ polling }: { polling: boolean }) {
   );
 }
 
-function AssistantBubble({ children, avatarSrc, welcome = false }: { children: ReactNode; avatarSrc: string; welcome?: boolean }) {
+/** A message's time as a clock reads it, "08:15". */
+function clock(at: number | undefined) {
+  if (!at) return null;
+  return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function AssistantBubble({ children, avatarSrc, welcome = false, at }: { children: ReactNode; avatarSrc: string; welcome?: boolean; at?: number }) {
+  const { adapter } = useAssistant();
+  const name = adapter.title ?? DEFAULT_NAME;
+  const time = clock(at);
   return (
     <div className={`assistant-message-row${welcome ? " assistant-message-row--welcome" : ""}`}>
       <div className="assistant-message__avatar" aria-hidden="true">
         <img src={avatarSrc} alt="" width={32} height={32} className="assistant-avatar__image" />
       </div>
-      <div className="assistant-message__bubble">
-        <span className="assistant-sr-only">Assistant: </span>
-        {children}
+      <div className="assistant-message__body">
+        {!welcome && <p className="assistant-message__name" aria-hidden="true">{name}</p>}
+        <div className="assistant-message__bubble">
+          <span className="assistant-sr-only">{name}: </span>
+          {children}
+        </div>
+        {time && <time className="assistant-message__time" dateTime={new Date(at!).toISOString()}>{time}</time>}
       </div>
     </div>
   );
@@ -555,17 +572,21 @@ function MessageRow({
   const { adapter, activeCapability } = assistant;
 
   if (message.role === "user") {
+    const time = clock(message.at);
     return (
-      <p className="assistant-user-message">
-        <span className="assistant-sr-only">You: </span>
-        {maskSensitiveNumbers(message.text)}
-      </p>
+      <div className="assistant-user-row">
+        <p className="assistant-user-message">
+          <span className="assistant-sr-only">You: </span>
+          {maskSensitiveNumbers(message.text)}
+        </p>
+        {time && <time className="assistant-message__time" dateTime={new Date(message.at!).toISOString()}>{time}</time>}
+      </div>
     );
   }
 
   if (message.role === "error") {
     return (
-      <AssistantBubble avatarSrc={adapter.avatarSrc}>
+      <AssistantBubble avatarSrc={adapter.avatarSrc} at={message.at}>
         <FriendlyFailure
           message={message.text}
           onRetry={message.retry ? () => onAsk(message.retry as string) : undefined}
@@ -580,10 +601,10 @@ function MessageRow({
 
   const result = message.response;
   const hosted = adapter.renderResult?.(result, { ask: onAsk });
-  if (hosted) return <AssistantBubble avatarSrc={adapter.avatarSrc}>{hosted}</AssistantBubble>;
+  if (hosted) return <AssistantBubble avatarSrc={adapter.avatarSrc} at={message.at}>{hosted}</AssistantBubble>;
 
   return (
-    <AssistantBubble avatarSrc={adapter.avatarSrc}>
+    <AssistantBubble avatarSrc={adapter.avatarSrc} at={message.at}>
       {result.resultType === "insight" && result.insight && (
         <InsightCard
           answer={result.insight.answer || result.answer}

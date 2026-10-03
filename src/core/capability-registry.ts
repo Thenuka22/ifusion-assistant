@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef } from "react";
 import type { CommandOutcome } from "../contracts/assistant-contracts";
-import type { EditorContextSnapshot } from "../contracts/section-context";
+import type { AssistantSubject, EditorContextSnapshot } from "../contracts/section-context";
 import type { ApplyDecision, ApplyResult, UiAction, UiActionKind } from "../contracts/ui-actions";
 
 /**
@@ -53,8 +53,11 @@ export interface EditorCapability {
 
 type Entry = { token: object; read: () => EditorCapability };
 
-/** Which part of a screen is showing, and a few display facts about it. */
-export type AssistantView = { view: string; facts?: Record<string, string> };
+/**
+ * Which part of a screen is showing, a few display facts about it, and — when the user has one
+ * thing open, such as an import item under review — that thing and what the screen says about it.
+ */
+export type AssistantView = { view: string; facts?: Record<string, string>; subject?: AssistantSubject };
 
 type ViewEntry = { token: object; read: () => AssistantView };
 
@@ -112,9 +115,17 @@ export class CapabilityRegistry {
     };
   };
 
+  /**
+   * The view to report: the newest one with something open in it — a drawer over a list — or else
+   * the newest. A drawer can mount in the same pass as the screen under it, and React registers a
+   * child before its parent, so order alone would let the list hide the drawer.
+   */
   getView = (): AssistantView | null => {
-    const entry = this.views[this.views.length - 1];
-    return entry ? entry.read() : null;
+    const views = this.views.map((entry) => entry.read());
+    for (let index = views.length - 1; index >= 0; index--) {
+      if (views[index].subject) return views[index];
+    }
+    return views[views.length - 1] ?? null;
   };
 
   private bump() {
@@ -169,10 +180,10 @@ export function useAssistantEditor(capability: EditorCapability | null): void {
  * Facts are display text only (never ids or whole grids), at most a dozen short ones. Pass `null`
  * to withdraw.
  */
-export function useAssistantView(view: string | null, facts?: Record<string, string>): void {
+export function useAssistantView(view: string | null, facts?: Record<string, string>, subject?: AssistantSubject | null): void {
   const registry = useCapabilityRegistry();
   const latest = useRef<AssistantView | null>(null);
-  latest.current = view ? { view, ...(facts ? { facts } : {}) } : null;
+  latest.current = view ? { view, ...(facts ? { facts } : {}), ...(subject ? { subject } : {}) } : null;
   const isOffered = view !== null;
 
   useEffect(() => {

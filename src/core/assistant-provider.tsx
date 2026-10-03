@@ -22,7 +22,8 @@ import {
   ASSISTANT_CONTEXT_VERSION,
   getBrowserTimeZone,
   type AssistantApp,
-  type AssistantContext
+  type AssistantContext,
+  type AssistantSubject
 } from "../contracts/section-context";
 import type { UiAction } from "../contracts/ui-actions";
 import type { AssistantAdapter } from "./adapter";
@@ -53,17 +54,22 @@ export type CommandState =
   | { status: "failed"; message: string }
   | { status: "dismissed" };
 
+/**
+ * One entry in the conversation. `at` is when it arrived, in epoch milliseconds; threads stored
+ * before 0.8 have none and simply show no time.
+ */
 export type ThreadMessage =
-  | { id: string; role: "user"; text: string }
+  | { id: string; role: "user"; text: string; at?: number }
   | {
       id: string;
       role: "assistant";
       response: AssistantQueryResponse;
       apply?: ApplyState;
       command?: CommandState;
+      at?: number;
     }
-  | { id: string; role: "error"; text: string; retry?: string }
-  | { id: string; role: "notice"; text: string };
+  | { id: string; role: "error"; text: string; retry?: string; at?: number }
+  | { id: string; role: "notice"; text: string; at?: number };
 
 type ThreadState = {
   messages: ThreadMessage[];
@@ -81,11 +87,11 @@ export type PendingAttachment = { attachmentId: string; name: string };
 const MAX_THREAD_MESSAGES = 30;
 
 type ThreadAction =
-  | { type: "user"; id: string; text: string }
-  | { type: "assistant"; id: string; response: AssistantQueryResponse }
+  | { type: "user"; id: string; text: string; at?: number }
+  | { type: "assistant"; id: string; response: AssistantQueryResponse; at?: number }
   | { type: "replace"; id: string; response: AssistantQueryResponse }
-  | { type: "error"; id: string; text: string; retry?: string }
-  | { type: "notice"; id: string; text: string }
+  | { type: "error"; id: string; text: string; retry?: string; at?: number }
+  | { type: "notice"; id: string; text: string; at?: number }
   | { type: "apply"; id: string; state: ApplyState }
   | { type: "command"; id: string; state: CommandState }
   | { type: "session"; sessionId: string }
@@ -99,11 +105,11 @@ function trim(messages: ThreadMessage[]) {
 function threadReducer(state: ThreadState, action: ThreadAction): ThreadState {
   switch (action.type) {
     case "user":
-      return { ...state, messages: trim([...state.messages, { id: action.id, role: "user", text: action.text }]) };
+      return { ...state, messages: trim([...state.messages, { id: action.id, role: "user", text: action.text, at: action.at }]) };
     case "assistant":
       return {
         ...state,
-        messages: trim([...state.messages, { id: action.id, role: "assistant", response: action.response }])
+        messages: trim([...state.messages, { id: action.id, role: "assistant", response: action.response, at: action.at }])
       };
     case "replace":
       return {
@@ -117,10 +123,10 @@ function threadReducer(state: ThreadState, action: ThreadAction): ThreadState {
     case "error":
       return {
         ...state,
-        messages: trim([...state.messages, { id: action.id, role: "error", text: action.text, retry: action.retry }])
+        messages: trim([...state.messages, { id: action.id, role: "error", text: action.text, retry: action.retry, at: action.at }])
       };
     case "notice":
-      return { ...state, messages: trim([...state.messages, { id: action.id, role: "notice", text: action.text }]) };
+      return { ...state, messages: trim([...state.messages, { id: action.id, role: "notice", text: action.text, at: action.at }]) };
     case "apply":
       return {
         ...state,
@@ -383,7 +389,8 @@ export function AssistantProvider({
       ...(snapshot ? { editor: snapshot } : {}),
       ...(getBrowserTimeZone() ? { timeZone: getBrowserTimeZone() } : {}),
       ...(view?.view ? { view: view.view.slice(0, 64) } : {}),
-      ...(viewFacts && Object.keys(viewFacts).length > 0 ? { viewFacts } : {})
+      ...(viewFacts && Object.keys(viewFacts).length > 0 ? { viewFacts } : {}),
+      ...(view?.subject ? { subject: boundSubject(view.subject) } : {})
     };
   }, [registry]);
 
@@ -435,7 +442,7 @@ export function AssistantProvider({
 
   const finalize = useCallback(
     (messageId: string, response: AssistantQueryResponse, mode: "add" | "replace") => {
-      dispatch(mode === "add" ? { type: "assistant", id: messageId, response } : { type: "replace", id: messageId, response });
+      dispatch(mode === "add" ? { type: "assistant", at: Date.now(), id: messageId, response } : { type: "replace", id: messageId, response });
       if (response.sessionId) dispatch({ type: "session", sessionId: response.sessionId });
 
       if (response.resultType === "uiAction" && response.uiAction) {
@@ -470,7 +477,7 @@ export function AssistantProvider({
 
       if (!options?.attachmentId && pendingAttachment) setPendingAttachment(null);
       setRetryAt(null);
-      dispatch({ type: "user", id: nextId("u"), text: trimmed });
+      dispatch({ type: "user", at: Date.now(), id: nextId("u"), text: trimmed });
       setStatus("asking");
 
       const request: AssistantAskRequest = {
@@ -491,7 +498,7 @@ export function AssistantProvider({
           requestRef.current = null;
 
           if (response.resultType === "queued") {
-            dispatch({ type: "assistant", id: messageId, response });
+            dispatch({ type: "assistant", at: Date.now(), id: messageId, response });
             if (response.sessionId) dispatch({ type: "session", sessionId: response.sessionId });
             setPendingRun({
               messageId,
@@ -519,7 +526,7 @@ export function AssistantProvider({
 
           const described = adapter.describeError?.(error);
           dispatch({
-            type: "error",
+            type: "error", at: Date.now(),
             id: nextId("e"),
             text: described || getFriendlyRequestError(error),
             retry: trimmed
@@ -549,7 +556,7 @@ export function AssistantProvider({
             if (Date.now() - pendingRun.startedAt > MAX_POLL_MS) {
               if (adapter.cancelRun) void adapter.cancelRun(pendingRun.runId).catch(() => undefined);
               dispatch({
-                type: "error",
+                type: "error", at: Date.now(),
                 id: nextId("e"),
                 text: "That is taking much longer than it should, so I’ve stopped waiting. Your editor draft is preserved.",
                 retry: pendingRun.question
@@ -569,7 +576,7 @@ export function AssistantProvider({
         .catch(() => {
           if (stale()) return;
           dispatch({
-            type: "error",
+            type: "error", at: Date.now(),
             id: nextId("e"),
             text: "I couldn’t collect the completed answer right now. Please try again shortly.",
             retry: pendingRun.question
@@ -740,7 +747,7 @@ export function AssistantProvider({
     const runId = pendingRun?.runId;
     abandonInFlight();
     if (runId && adapter.cancelRun) void adapter.cancelRun(runId).catch(() => undefined);
-    dispatch({ type: "notice", id: nextId("notice"), text: "Stopped. Your editor draft is preserved." });
+    dispatch({ type: "notice", at: Date.now(), id: nextId("notice"), text: "Stopped. Your editor draft is preserved." });
   }, [abandonInFlight, adapter, pendingRun]);
 
   const reset = useCallback(() => {
@@ -836,6 +843,16 @@ const TRANSIENT_REFUSALS = new Set([
 
 /** How long a queued answer is waited for before the widget gives up and offers to ask again. */
 const MAX_POLL_MS = 90_000;
+
+/** What the screen says about the open item, cut to what the schema takes rather than refused. */
+function boundSubject(subject: AssistantSubject): AssistantSubject {
+  return {
+    kind: subject.kind.slice(0, 40),
+    title: subject.title.slice(0, 200),
+    ...(subject.state ? { state: subject.state.slice(0, 80) } : {}),
+    lines: subject.lines.map((line) => line.trim()).filter(Boolean).slice(0, 20).map((line) => line.slice(0, 400))
+  };
+}
 
 /** At most a dozen short display facts; anything longer is cut rather than refused by the schema. */
 function boundFacts(facts: Record<string, string>): Record<string, string> {

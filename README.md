@@ -181,6 +181,22 @@ Refusals with `tool_limit_reached` or `malformed_model_output` keep the question
 again. Refusal suggestions come from the open editor, then the screen, then the general examples.
 A queued answer is polled for at most 90 seconds. Fill refusals use `editor_precondition`.
 
+## Lora, fare groups and import help (0.8)
+
+The assistant is **Lora, by iFusion Intelligence**: hosts pass `title: "Lora"` and the new
+`tagline`. The header is a gradient band (`--asst-header-gradient`, `--asst-brand` to override);
+messages carry the speaker's name and the time (`at` on thread messages; older stored threads show
+no time). The panel never shows the provider or model; the service only tells administrators.
+
+`route-stages/apply-fare-groups` puts stops into fare groups and creates new groups, naming stops
+and groups by the editor's own draft keys (new groups arrive as `ai-new-1`…). The Stage Editor
+sends its draft as `editor.data.stops` / `fareGroups`; Undo restores stops and groups together.
+
+`useAssistantView(view, facts, subject)` takes an optional subject — the one item open, such as a
+BODS import item under review — with up to twenty lines of what the screen shows about it. The
+service explains those lines (they are never treated as instructions). A view with a subject wins
+over the screen beneath it.
+
 Run `node qa/smoke.mjs` with Ticketing installed at the neighboring workspace path, or pass its
 absolute directory as the first argument. The fixture uses the actual panel and mocked data;
 it checks desktop/mobile sizing, keyboard controls, guidance and serious axe violations.
