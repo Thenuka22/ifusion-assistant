@@ -203,7 +203,7 @@ export function UiActionCard({
           <p className="assistant-applied__line">
             <Check aria-hidden="true" size={14} />
             <span>
-              Filled {state.appliedCount} {state.appliedCount === 1 ? "value" : "values"} in the
+              Changed {state.appliedCount} {state.appliedCount === 1 ? "value" : "values"} in the
               editor. Review the highlighted cells, then press Save.
             </span>
           </p>
@@ -236,8 +236,24 @@ export function UiActionCard({
 
       {state?.status === "undone" && (
         <p className="assistant-muted">
-          <Undo2 aria-hidden="true" size={13} /> Undone — the editor is back to how it was.
+          <Undo2 aria-hidden="true" size={13} />{" "}
+          {state.count && state.count > 1 ? `Undid my last ${state.count} changes` : "Undone"} in the
+          editor. Nothing is saved until you press Save — if you saved after the change, Save again
+          to keep the earlier values.
         </p>
+      )}
+
+      {state?.status === "pending" && (
+        <div className="assistant-applied assistant-applied--pending">
+          <p className="assistant-applied__line">
+            <TriangleAlert aria-hidden="true" size={14} />
+            <span>This replaces prices already in the table, so nothing has changed yet.</span>
+          </p>
+          <button type="button" onClick={onApply} className="assistant-text-action">
+            <Wand2 aria-hidden="true" size={14} />
+            Apply to the grid
+          </button>
+        </div>
       )}
 
       {state?.status === "unavailable" && (

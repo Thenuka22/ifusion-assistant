@@ -44,7 +44,8 @@ export const fareTriangleCellSchema = z
     z.object({
       fromFareStageId: z.number().int().positive(),
       toFareStageId: z.number().int().positive(),
-      fareValue: z.string().regex(FARE_VALUE_PATTERN),
+      /** A price, or "" to clear the cell back to not sold. */
+      fareValue: z.union([z.string().regex(FARE_VALUE_PATTERN), z.literal("")]),
       /** Present for image extraction. Below ~0.8 the UI flags the cell for a closer look. */
       confidence: z.number().min(0).max(1).nullish().transform((value) => value ?? undefined)
     })
@@ -71,7 +72,12 @@ export const fareTriangleApplyCellsSchema = z.object({
   mode: z.literal("merge"),
   cells: z.array(fareTriangleCellSchema).min(1).max(MAX_UI_ACTION_CELLS),
   source: z.enum(uiActionSources).catch("instruction"),
-  warnings: z.array(z.string()).nullish().transform((value) => value ?? [])
+  warnings: z.array(z.string()).nullish().transform((value) => value ?? []),
+  /**
+   * Set when the fill rewrites a lot of what is already priced: the card waits for the user to
+   * press Apply instead of changing the grid straight away.
+   */
+  requiresConfirmation: z.boolean().nullish().transform((value) => value ?? false)
 });
 
 export type FareTriangleApplyCells = z.infer<typeof fareTriangleApplyCellsSchema>;
@@ -206,7 +212,9 @@ export const assistantUndoLastSchema = z.object({
   target: z.object({ routeId: z.number().int().nonnegative() }).partial().nullish(),
   mode: z.literal("merge").catch("merge"),
   source: z.enum(uiActionSources).catch("instruction"),
-  warnings: z.array(z.string()).nullish().transform((value) => value ?? [])
+  warnings: z.array(z.string()).nullish().transform((value) => value ?? []),
+  /** How many of the assistant's changes to take back, newest first. */
+  undoCount: z.number().int().min(1).max(10).nullish().transform((value) => value ?? 1)
 });
 
 export type AssistantUndoLast = z.infer<typeof assistantUndoLastSchema>;

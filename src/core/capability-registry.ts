@@ -122,10 +122,7 @@ export class CapabilityRegistry {
    */
   getView = (): AssistantView | null => {
     const views = this.views.map((entry) => entry.read());
-    for (let index = views.length - 1; index >= 0; index--) {
-      if (views[index].subject) return views[index];
-    }
-    return views[views.length - 1] ?? null;
+    return [...views].reverse().find((view) => view.subject) ?? views[views.length - 1] ?? null;
   };
 
   private bump() {

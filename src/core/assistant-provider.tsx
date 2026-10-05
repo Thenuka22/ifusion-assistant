@@ -45,8 +45,10 @@ export type ApplyState =
       /** Why undo stopped being available, when it was withdrawn rather than never offered. */
       undoNote?: string;
     }
-  | { status: "undone" }
-  | { status: "unavailable"; reason: string };
+  | { status: "undone"; count?: number }
+  | { status: "unavailable"; reason: string }
+  /** A large rewrite waiting for the user to press Apply; the grid is untouched until then. */
+  | { status: "pending" };
 
 export type CommandState =
   | { status: "confirming" }
@@ -404,7 +406,7 @@ export function AssistantProvider({
     (messageId: string, action: UiAction) => {
       // Not a change of its own: it takes back the latest one, through that change's own undo.
       if (action.kind === "assistant/undo-last") {
-        undoLatestRef.current(messageId);
+        undoLatestRef.current(messageId, action.undoCount);
         return;
       }
       const capability = registry.getActive();
@@ -446,7 +448,7 @@ export function AssistantProvider({
   );
 
   // "Undo that" from chat, wired once the undo helpers below exist.
-  const undoLatestRef = useRef<(messageId: string) => void>(() => undefined);
+  const undoLatestRef = useRef<(messageId: string, count: number) => void>(() => undefined);
 
   const finalize = useCallback(
     (messageId: string, response: AssistantQueryResponse, mode: "add" | "replace") => {
@@ -455,7 +457,14 @@ export function AssistantProvider({
 
       if (response.resultType === "uiAction" && response.uiAction) {
         actionRef.current.set(messageId, response.uiAction);
-        applyToEditor(messageId, response.uiAction);
+        // A fill that replaces much of what is priced waits for Apply, so a misread instruction
+        // never rewrites a table before anyone has looked at it.
+        const action = response.uiAction;
+        if (action.kind === "fare-triangle/apply-cells" && action.requiresConfirmation) {
+          dispatch({ type: "apply", id: messageId, state: { status: "pending" } });
+        } else {
+          applyToEditor(messageId, action);
+        }
       }
     },
     [applyToEditor]
@@ -651,28 +660,36 @@ export function AssistantProvider({
   );
 
   /**
-   * Takes back the newest change the assistant made that can still be undone, exactly as its card's
-   * Undo does: every cell returns to what it held before, including cells that differed. Asked for in
-   * chat, so a model never has to imitate an undo by filling the old values in again.
+   * Takes back the newest changes the assistant made that can still be undone, newest first, exactly
+   * as each card's Undo does. Asked for in chat, so a model never has to imitate an undo by filling
+   * the old values in again.
    */
   const undoLatest = useCallback(
-    (messageId: string) => {
-      const latest = [...undoRef.current.keys()].at(-1);
-      if (!latest) {
+    (messageId: string, count: number) => {
+      let undone = 0;
+      let stopped: string | undefined;
+      for (const key of [...undoRef.current.keys()].reverse()) {
+        if (undone >= Math.max(1, count)) break;
+        const availability = undoAvailability(key);
+        if (!availability.ok) {
+          stopped = availability.reason;
+          break;
+        }
+        undoApply(key);
+        undone += 1;
+      }
+      if (undone === 0) {
         dispatch({
           type: "apply",
           id: messageId,
-          state: { status: "unavailable", reason: "There’s no change of mine left to undo here. Ctrl+Z in the grid steps back through your own edits." }
+          state: {
+            status: "unavailable",
+            reason: stopped ?? "There’s no change of mine left to undo here. Ctrl+Z in the grid steps back through your own edits."
+          }
         });
         return;
       }
-      const availability = undoAvailability(latest);
-      if (!availability.ok) {
-        dispatch({ type: "apply", id: messageId, state: { status: "unavailable", reason: availability.reason } });
-        return;
-      }
-      undoApply(latest);
-      dispatch({ type: "apply", id: messageId, state: { status: "undone" } });
+      dispatch({ type: "apply", id: messageId, state: { status: "undone", count: undone } });
     },
     [undoApply, undoAvailability]
   );
