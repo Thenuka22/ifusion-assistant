@@ -402,6 +402,11 @@ export function AssistantProvider({
    */
   const applyToEditor = useCallback(
     (messageId: string, action: UiAction) => {
+      // Not a change of its own: it takes back the latest one, through that change's own undo.
+      if (action.kind === "assistant/undo-last") {
+        undoLatestRef.current(messageId);
+        return;
+      }
       const capability = registry.getActive();
       if (!capability || !capability.accepts.includes(action.kind)) {
         dispatch({
@@ -439,6 +444,9 @@ export function AssistantProvider({
     },
     [registry]
   );
+
+  // "Undo that" from chat, wired once the undo helpers below exist.
+  const undoLatestRef = useRef<(messageId: string) => void>(() => undefined);
 
   const finalize = useCallback(
     (messageId: string, response: AssistantQueryResponse, mode: "add" | "replace") => {
@@ -641,6 +649,37 @@ export function AssistantProvider({
     },
     [thread.messages, undoAvailability]
   );
+
+  /**
+   * Takes back the newest change the assistant made that can still be undone, exactly as its card's
+   * Undo does: every cell returns to what it held before, including cells that differed. Asked for in
+   * chat, so a model never has to imitate an undo by filling the old values in again.
+   */
+  const undoLatest = useCallback(
+    (messageId: string) => {
+      const latest = [...undoRef.current.keys()].at(-1);
+      if (!latest) {
+        dispatch({
+          type: "apply",
+          id: messageId,
+          state: { status: "unavailable", reason: "There’s no change of mine left to undo here. Ctrl+Z in the grid steps back through your own edits." }
+        });
+        return;
+      }
+      const availability = undoAvailability(latest);
+      if (!availability.ok) {
+        dispatch({ type: "apply", id: messageId, state: { status: "unavailable", reason: availability.reason } });
+        return;
+      }
+      undoApply(latest);
+      dispatch({ type: "apply", id: messageId, state: { status: "undone" } });
+    },
+    [undoApply, undoAvailability]
+  );
+
+  useEffect(() => {
+    undoLatestRef.current = undoLatest;
+  }, [undoLatest]);
 
   const runCommand = useCallback(
     (messageId: string) => {

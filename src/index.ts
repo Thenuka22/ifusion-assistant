@@ -70,6 +70,7 @@ export {
   routeStagesApplyRowsSchema,
   routeStagesApplyFareGroupsSchema,
   flatFarePrepareSchema,
+  assistantUndoLastSchema,
   uiActionBodySchema,
   uiActionKinds,
   uiActionSchema,

@@ -11,7 +11,7 @@ import { z } from "zod";
  * directly: the model names an intent and the server turns it into cells.
  */
 
-export const uiActionKinds = ["fare-triangle/apply-cells", "route-stages/apply-rows", "route-stages/apply-fare-groups", "flat-fares/prepare"] as const;
+export const uiActionKinds = ["fare-triangle/apply-cells", "route-stages/apply-rows", "route-stages/apply-fare-groups", "flat-fares/prepare", "assistant/undo-last"] as const;
 export type UiActionKind = (typeof uiActionKinds)[number];
 
 /** Where a filled value came from, which decides how prominently the UI asks for a review. */
@@ -195,11 +195,28 @@ export const flatFarePrepareSchema = z.object({
 
 export type FlatFarePrepare = z.infer<typeof flatFarePrepareSchema>;
 
+/**
+ * "Undo that": the widget takes back the assistant's latest change through that change's own undo,
+ * so each cell or row returns to what it held before. It carries no values to fill.
+ */
+export const assistantUndoLastSchema = z.object({
+  kind: z.literal("assistant/undo-last"),
+  editorRevision: z.string().max(128).nullish(),
+  version: z.literal(1),
+  target: z.object({ routeId: z.number().int().nonnegative() }).partial().nullish(),
+  mode: z.literal("merge").catch("merge"),
+  source: z.enum(uiActionSources).catch("instruction"),
+  warnings: z.array(z.string()).nullish().transform((value) => value ?? [])
+});
+
+export type AssistantUndoLast = z.infer<typeof assistantUndoLastSchema>;
+
 export const uiActionBodySchema = z.discriminatedUnion("kind", [
   fareTriangleApplyCellsSchema,
   routeStagesApplyRowsSchema,
   routeStagesApplyFareGroupsSchema,
-  flatFarePrepareSchema
+  flatFarePrepareSchema,
+  assistantUndoLastSchema
 ]);
 
 export type UiActionBody = z.infer<typeof uiActionBodySchema>;
