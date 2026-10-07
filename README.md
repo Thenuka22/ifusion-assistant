@@ -202,6 +202,18 @@ over the screen beneath it.
 `flat-fares/prepare` carries a flat fare (ticket class, amount, start date, routes) for the fare
 editor's Flat fares form to open filled in. The editor never saves it on the assistant's behalf.
 
+## Commands that open something (0.11)
+
+A `commandProposal` may now carry `args`: a small object for a command that *opens* something
+rather than writes it. The editor's command receives them (`commands[id](args)`), and an app-level
+command gets them when there is no stored payload. Saves and deletes still carry none, so a save
+handler must not read a parameter it does not expect; wrap it (`"x/save": () => save()`).
+
+- `route-stages/find-stops { fromText, toText, viaTexts }` opens the Stage Editor's Find stops
+  with the place names in its search boxes. The user still picks the end stops on the map.
+- `route-stages/open-route { routeId }` opens a route in the Stage Editor (an app-level command in
+  Ticketing, so it works from the route picker too).
+
 Run `node qa/smoke.mjs` with Ticketing installed at the neighboring workspace path, or pass its
 absolute directory as the first argument. The fixture uses the actual panel and mocked data;
 it checks desktop/mobile sizing, keyboard controls, guidance and serious axe violations.

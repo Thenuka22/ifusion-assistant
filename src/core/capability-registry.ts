@@ -32,8 +32,11 @@ export interface EditorCapability {
    * These run the editor's own existing operation, so the change goes through the same endpoint,
    * the same validation and the same permissions as pressing the button by hand. The assistant
    * never builds the payload: it asks, the user agrees, and the editor does what it always does.
+   *
+   * A command that opens something (a finder with its search boxes filled in, another record) is
+   * handed the proposal's `args`; one that saves or deletes ignores them.
    */
-  commands?: Record<string, () => Promise<CommandOutcome>>;
+  commands?: Record<string, (args?: Record<string, unknown>) => Promise<CommandOutcome>>;
   /** Present only on screens that accept an image. Its absence hides the upload button. */
   attachments?: {
     kinds: string[];

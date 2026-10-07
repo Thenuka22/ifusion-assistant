@@ -728,7 +728,7 @@ export function AssistantProvider({
         : adapter.getProposalPayload(proposal.proposalId);
 
       load
-        .then((payload) => (editorCommand ? editorCommand() : appCommand!(payload)))
+        .then((payload) => (editorCommand ? editorCommand(proposal.args) : appCommand!(payload ?? proposal.args)))
         .then((outcome) => {
           dispatch({
             type: "command",

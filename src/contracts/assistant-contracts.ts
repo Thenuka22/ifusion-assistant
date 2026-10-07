@@ -168,10 +168,11 @@ export const assistantReportProposalSchema = z.object({
 });
 
 /**
- * A write the assistant is asking permission to make.
+ * A write the assistant is asking permission to make, or a screen it is asking to open.
  *
- * The payload stays on the server; on confirmation the app fetches it and calls its own normal
- * endpoint, so the user's own permissions decide whether the write is allowed.
+ * A write's payload stays on the server; on confirmation the app fetches it and calls its own
+ * normal endpoint, so the user's own permissions decide whether the write is allowed. An "open"
+ * command may carry small `args` (search text, a route id): never data that is saved.
  */
 export const assistantCommandProposalSchema = z.object({
   proposalId: z.string().min(1),
@@ -186,7 +187,12 @@ export const assistantCommandProposalSchema = z.object({
   /** What a destructive change asks the user to type before Confirm becomes available. */
   confirmPhrase: safeText,
   expiresAt: safeText,
-  requiresConfirmation: z.boolean().nullish().transform((value) => value ?? true)
+  requiresConfirmation: z.boolean().nullish().transform((value) => value ?? true),
+  /** What an "open" command needs, e.g. `{ fromText, toText, viaTexts }`. Absent for a save or delete. */
+  args: z
+    .record(z.string().max(64), z.unknown())
+    .nullish()
+    .transform((value) => value ?? undefined)
 });
 
 export const assistantClarificationSchema = z.object({
